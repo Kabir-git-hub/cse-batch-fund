@@ -1,0 +1,529 @@
+{
+  "config": {
+    "batchName": "CSE Batch-17",
+    "institution": "Sylhet Engineering College",
+    "monthlyFee": 50,
+    "startMonth": "2026-08",
+    "managerName": "Md.Ahosan Habib (Batch Treasurer)",
+    "contactPhone": "01790853898",
+    "bkashNumber": "01790853898",
+    "nagadNumber": "01790853898",
+    "adminPin": "1717",
+    "allowedAdminEmails": [
+      "alaminkabbirrrr@gmail.com"
+    ],
+    "googleSheetPaymentsUrl": "https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0",
+    "googleSheetExpensesUrl": "https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/gviz/tq?tqx=out:csv&sheet=Sheet2",
+    "googleSheetWebhookUrl": "https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec",
+    "lastSyncTime": "2026-08-07T19:32:11.127Z",
+    "deletedExpenseVouchers": []
+  },
+  "students": [
+    {
+      "id": "s1",
+      "roll": "2023331501",
+      "name": "Lutfa Begum",
+      "phone": "01700000501",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s2",
+      "roll": "2023331502",
+      "name": "Rajon Chowdhury",
+      "phone": "01700000502",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s3",
+      "roll": "2023331503",
+      "name": "Fazlul Haque Raza Chowdhury",
+      "phone": "01700000503",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s4",
+      "roll": "2023331504",
+      "name": "Azwad Hussain Shadman",
+      "phone": "01700000504",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s5",
+      "roll": "2023331505",
+      "name": "Ananya Chakraborty",
+      "phone": "01700000505",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s6",
+      "roll": "2023331506",
+      "name": "Ovi Deb",
+      "phone": "01700000506",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s7",
+      "roll": "2023331508",
+      "name": "Arijit Bhattacharjee",
+      "phone": "01700000508",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s8",
+      "roll": "2023331509",
+      "name": "Shrabony Ghosh Tithy",
+      "phone": "01700000509",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s9",
+      "roll": "2023331510",
+      "name": "Md. Saadat Hossain",
+      "phone": "01700000510",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s10",
+      "roll": "2023331511",
+      "name": "Sheikh Rohan Ahmed Rhythm",
+      "phone": "01700000511",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s11",
+      "roll": "2023331512",
+      "name": "Jannatul Ferdoush Maria",
+      "phone": "01700000512",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s12",
+      "roll": "2023331513",
+      "name": "Md. Ahosan Habib",
+      "phone": "01700000513",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s13",
+      "roll": "2023331514",
+      "name": "Sabikun Nahar Mina",
+      "phone": "01700000514",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s14",
+      "roll": "2023331515",
+      "name": "Rimi Rani Nath",
+      "phone": "01700000515",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s15",
+      "roll": "2023331516",
+      "name": "Nishat Tasnim Mou",
+      "phone": "01700000516",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s16",
+      "roll": "2023331517",
+      "name": "Mohammad Peyash Miyan",
+      "phone": "01700000517",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s17",
+      "roll": "2023331518",
+      "name": "Sumon Jatrabor",
+      "phone": "01700000518",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s18",
+      "roll": "2023331519",
+      "name": "Priom Paul",
+      "phone": "01700000519",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s19",
+      "roll": "2023331520",
+      "name": "Mst. Nasrin Jahan",
+      "phone": "01700000520",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s20",
+      "roll": "2023331521",
+      "name": "Dabasis Majumder",
+      "phone": "01700000521",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s21",
+      "roll": "2023331522",
+      "name": "Md. Mudassir Ahmed",
+      "phone": "01700000522",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s22",
+      "roll": "2023331523",
+      "name": "Md. Rajib Hossain Sunny",
+      "phone": "01700000523",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s23",
+      "roll": "2023331524",
+      "name": "Md. Shakibul Islam Jahid",
+      "phone": "01700000524",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s24",
+      "roll": "2023331525",
+      "name": "Mohammad R. Rafi Chowdhury",
+      "phone": "01700000525",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s25",
+      "roll": "2023331526",
+      "name": "Sadia Aktar Jui",
+      "phone": "01700000526",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s26",
+      "roll": "2023331527",
+      "name": "Tasneem Saraa",
+      "phone": "01700000527",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s27",
+      "roll": "2023331528",
+      "name": "Md. Mahi Ahmed",
+      "phone": "01700000528",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s28",
+      "roll": "2023331529",
+      "name": "Goutam Das Sagor",
+      "phone": "01700000529",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s29",
+      "roll": "2023331530",
+      "name": "Shajida Jahan Chowdhury",
+      "phone": "01700000530",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s30",
+      "roll": "2023331531",
+      "name": "Nur Ahmed Marzan",
+      "phone": "01700000531",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s31",
+      "roll": "2023331532",
+      "name": "Mahadi Hasan Pial",
+      "phone": "01700000532",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s32",
+      "roll": "2023331533",
+      "name": "Hrittik Chakrabarty Rony",
+      "phone": "01700000533",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s33",
+      "roll": "2023331534",
+      "name": "Anushua Deb Toma",
+      "phone": "01700000534",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s34",
+      "roll": "2023331535",
+      "name": "Md. Himel Hossain",
+      "phone": "01700000535",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s35",
+      "roll": "2023331536",
+      "name": "Tanvir Khan Jihad",
+      "phone": "01700000536",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s36",
+      "roll": "2023331537",
+      "name": "Samir Kanti Baidya",
+      "phone": "01700000537",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s37",
+      "roll": "2023331538",
+      "name": "Raysul Islam Rakib",
+      "phone": "01700000538",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s38",
+      "roll": "2023331539",
+      "name": "Ishrath Jahan Chowdhury",
+      "phone": "01700000539",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s39",
+      "roll": "2023331540",
+      "name": "Md. Riajul Islam",
+      "phone": "01700000540",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s40",
+      "roll": "2023331541",
+      "name": "Md. Mehedi Hasan Mirraz",
+      "phone": "01700000541",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s41",
+      "roll": "2023331542",
+      "name": "Tanjil Alam Sagor",
+      "phone": "01700000542",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s42",
+      "roll": "2023331543",
+      "name": "Jumara Akter",
+      "phone": "01700000543",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s43",
+      "roll": "2023331544",
+      "name": "Sneha Das",
+      "phone": "01700000544",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s44",
+      "roll": "2023331545",
+      "name": "Mahfujur Rahman",
+      "phone": "01700000545",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s45",
+      "roll": "2023331546",
+      "name": "Md. Al Amin Kabir",
+      "phone": "01700000546",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s46",
+      "roll": "2023331547",
+      "name": "Lincon Paul",
+      "phone": "01700000547",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s47",
+      "roll": "2023331548",
+      "name": "Ratul Talukder",
+      "phone": "01700000548",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s48",
+      "roll": "2023331549",
+      "name": "Raihan Ahmed",
+      "phone": "01700000549",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s49",
+      "roll": "2023331550",
+      "name": "Maimunah Tabassum",
+      "phone": "01700000550",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s50",
+      "roll": "2023331551",
+      "name": "Quazi Md. Naimul Hasan Nabil",
+      "phone": "01700000551",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s51",
+      "roll": "2023331552",
+      "name": "Susanta Roy",
+      "phone": "01700000552",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s52",
+      "roll": "2023331553",
+      "name": "Md. Jahidul Islam Ratul",
+      "phone": "01700000553",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s53",
+      "roll": "2023331554",
+      "name": "Md. Nur Siam",
+      "phone": "01700000554",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s54",
+      "roll": "2023331555",
+      "name": "Abdul Majid Nabil",
+      "phone": "01700000555",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s55",
+      "roll": "2023331556",
+      "name": "Turjya Das",
+      "phone": "01700000556",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s56",
+      "roll": "2023331557",
+      "name": "Bishowjit Paul",
+      "phone": "01700000557",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s57",
+      "roll": "2023331558",
+      "name": "Arghya Roy",
+      "phone": "01700000558",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s58",
+      "roll": "2023331559",
+      "name": "Hussain Ahmed",
+      "phone": "01700000559",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s59",
+      "roll": "2023331560",
+      "name": "Dibyasree Dey",
+      "phone": "01700000560",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s60",
+      "roll": "2023331561",
+      "name": "Md. Abul Hasnat Sajib",
+      "phone": "01700000561",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s61",
+      "roll": "2023331562",
+      "name": "Tania Begum",
+      "phone": "01700000562",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s62",
+      "roll": "2023331563",
+      "name": "Dhurjoy Chondo Dhrubo",
+      "phone": "01700000563",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "id": "s63",
+      "roll": "2023331564",
+      "name": "Simanta Singha",
+      "phone": "01700000564",
+      "status": "active",
+      "joinedMonth": "2025-01"
+    }
+  ],
+  "receipts": [],
+  "expenses": []
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Remix SEC CSE Batch-17 Fund Tracker",
+  "description": "Live Batch Fund Management System for CSE Dept, Sylhet Engineering College (Batch-17). Tracks monthly dues (50 BDT/month), expenses, payment receipts, student status, and live Google Sheets sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

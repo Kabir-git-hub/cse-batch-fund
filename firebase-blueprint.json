@@ -1,0 +1,25 @@
+{
+  "entities": {
+    "AdminConfig": {
+      "title": "AdminConfig",
+      "description": "System admin config and authorized emails",
+      "type": "object",
+      "properties": {
+        "allowedAdminEmails": {
+          "type": "array",
+          "description": "List of authorized admin gmail addresses"
+        },
+        "adminPin": {
+          "type": "string",
+          "description": "Admin security PIN"
+        }
+      }
+    }
+  },
+  "firestore": {
+    "/config/admin": {
+      "schema": "AdminConfig",
+      "description": "System configuration"
+    }
+  }
+}
