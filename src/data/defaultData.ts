@@ -1,4 +1,4 @@
-import { BatchConfig, Student, PaymentReceipt, Expense } from '../types';
+import { BatchConfig, Student, PaymentReceipt, Expense } from '../types.js';
 import { INITIAL_ALLOWED_ADMIN_EMAILS } from '../config/adminConfig.js';
 
 export const initialConfig: BatchConfig = {

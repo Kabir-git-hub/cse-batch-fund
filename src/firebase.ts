@@ -13,8 +13,12 @@ async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+    if (error instanceof Error) {
+      if (error.message.includes('the client is offline')) {
+        console.error('Please check your Firebase configuration.');
+      } else if (error.message.includes('PERMISSION_DENIED') || (error as any).code === 'permission-denied') {
+        console.warn('Firebase Firestore PERMISSION_DENIED: Please enable read/write rules in your Firebase Console for project sec-cse-batch-17-fund.');
+      }
     }
   }
 }
