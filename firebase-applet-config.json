@@ -1,9 +1,9 @@
 {
-  "apiKey": "AIzaSyDUvV7k7j4TfDVFWlH-TNmqsvxSN6hvxFU",
-  "authDomain": "sec-cse-batch-17-fund.firebaseapp.com",
-  "projectId": "sec-cse-batch-17-fund",
-  "storageBucket": "sec-cse-batch-17-fund.firebasestorage.app",
-  "messagingSenderId": "614671899169",
-  "appId": "1:614671899169:web:14b439cb9d735947e5e160",
-  "measurementId": "G-YWLVF26XDP"
+  apiKey: "AIzaSyDUvV7k7j4TfDVFWlN-TNmqsvxSN6hvxFU",
+  authDomain: "sec-cse-batch-17-fund.firebaseapp.com",
+  projectId: "sec-cse-batch-17-fund",
+  storageBucket: "sec-cse-batch-17-fund.firebasestorage.app",
+  messagingSenderId: "614671899169",
+  appId: "1:614671899169:web:14b439cb9d735947e5e160",
+  measurementId: "G-YWLVF26XDP"
 }
