@@ -1539,8 +1539,8 @@ INSTRUCTIONS:
     //const vite = await createViteServer({
      // server: { middlewareMode: true },
      // appType: 'spa',
-    });
-    app.use(vite.middlewares);
+   // });
+   // app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
