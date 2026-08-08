@@ -1,12 +1,10 @@
 {
-  "projectId": "consummate-highlander-k1ttq",
-  "appId": "1:465167065007:web:9717037e67cc2d945fd95a",
-  "apiKey": "AIzaSyAjHNa6z6psTTvjGjxz0RBS9s7PQK4c42c",
-  "authDomain": "consummate-highlander-k1ttq.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-remixseccsebatch-acd00afb-98c8-434e-ba1b-422a6858b465",
-  "storageBucket": "consummate-highlander-k1ttq.firebasestorage.app",
-  "messagingSenderId": "465167065007",
-  "measurementId": "",
-  "oAuthClientId": "465167065007-pqciu4tgsadjnuou6hu346nupgo6dnd7.apps.googleusercontent.com",
-  "recaptchaSiteKey": ""
+  "apiKey": "AIzaSyDUvV7k7j4TfDVFWlN-TNmqsvxSN6hvxFU",
+  "authDomain": "sec-cse-17-fund.firebaseapp.com",
+  "projectId": "sec-cse-17-fund",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "sec-cse-17-fund.firebasestorage.app",
+  "messagingSenderId": "614671899169",
+  "appId": "1:614671899169:web:14b439cb9d735947e5e160",
+  "measurementId": "G-YWLVF26XDP"
 }
