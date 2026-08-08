@@ -1,4 +1,4 @@
-const firebaseConfig = {
+{
   "apiKey": "AIzaSyDUvV7k7j4TfDVFWlN-TNmqsvxSN6hvxFU",
   "authDomain": "sec-cse-17-fund.firebaseapp.com",
   "projectId": "sec-cse-17-fund",
@@ -7,4 +7,4 @@ const firebaseConfig = {
   "messagingSenderId": "614671899169",
   "appId": "1:614671899169:web:14b439cb9d735947e5e160",
   "measurementId": "G-YWLVF26XDP"
-};
+}
