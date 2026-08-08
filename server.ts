@@ -6,9 +6,9 @@ import { GoogleGenAI } from '@google/genai';
 import Papa from 'papaparse';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc, getDocs, collection, deleteDoc } from 'firebase/firestore';
-import { initialConfig, initialStudents, initialReceipts, initialExpenses } from './src/data/defaultData';
-import { PRIMARY_ADMIN_EMAIL, INITIAL_ALLOWED_ADMIN_EMAILS } from './src/config/adminConfig';
-import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './src/types';
+import { initialConfig, initialStudents, initialReceipts, initialExpenses } from './src/data/defaultData.js';
+import { PRIMARY_ADMIN_EMAIL, INITIAL_ALLOWED_ADMIN_EMAILS } from './src/config/adminConfig.js';
+import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './src/types.js';
 
 const PORT = 3000;
 const DB_FILE = path.join(process.cwd(), 'data', 'db.json');
