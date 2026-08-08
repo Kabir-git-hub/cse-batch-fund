@@ -1536,9 +1536,9 @@ INSTRUCTIONS:
 
   // Vite middleware in dev or static files in production
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
+    //const vite = await createViteServer({
+     // server: { middlewareMode: true },
+     // appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
