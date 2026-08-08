@@ -154,11 +154,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               onChange={(e) => handleStudentChange(e.target.value)}
               className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500/30"
             >
-              {students.map((s) => (
-                <option key={s.id} value={s.roll}>
-                  {s.roll} — {s.name} ({s.phone})
+              {[...students].sort((a, b) => Number(a.roll) - Number(b.roll)).map((s) => (
+              <option key={s.id} value={s.roll}>
+                {s.roll} — {s.name}
                 </option>
-              ))}
+                ))}
             </select>
           </div>
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Printer, CheckCircle2, ShieldCheck, Download, ExternalLink, Calendar, Phone, CreditCard, Trash2 } from 'lucide-react';
 import { PaymentReceipt, Expense, BatchConfig } from '../../types';
+import { SecLogo } from '../SecLogo';
 
 interface ReceiptModalProps {
   config: BatchConfig;
@@ -200,8 +201,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           
           {/* SEC CSE Header */}
           <div className="text-center border-b border-slate-200 pb-4 space-y-1">
-            <div className="w-12 h-12 bg-slate-900 text-emerald-400 rounded-xl font-black text-xl flex items-center justify-center mx-auto mb-2">
-              SEC
+            <div className="flex items-center justify-center mb-2">
+              <SecLogo className="w-16 h-16 rounded-full border border-slate-200 p-0.5" />
             </div>
             <h2 className="text-lg font-extrabold uppercase tracking-tight text-slate-900">
               {config.institution || 'Sylhet Engineering College'}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Shield, ShieldCheck, Plus, Receipt, Bot, LayoutDashboard, Users, CalendarDays, Wallet, Clock, RefreshCw } from 'lucide-react';
 import { BatchConfig, FundStats } from '../types';
 import { PRIMARY_ADMIN_EMAIL } from '../config/adminConfig';
+import { SecLogo } from './SecLogo';
 
 interface NavbarProps {
   config: BatchConfig;
@@ -55,10 +56,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           
           {/* Brand & Institution Info */}
           <div className="flex items-center gap-3">
-            <div className="bg-white p-2 rounded-xl shadow-xs">
-              <div className="w-7 h-7 bg-slate-900 text-emerald-400 font-black text-sm flex items-center justify-center rounded-lg">
-                SEC
-              </div>
+            <div className="bg-white p-1 rounded-full shadow-md shrink-0 flex items-center justify-center overflow-hidden">
+              <SecLogo className="w-10 h-10 sm:w-11 sm:h-11" />
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight uppercase text-white">

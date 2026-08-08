@@ -85,7 +85,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
             </label>
             <input
               type="text"
-              placeholder="e.g. 210126"
+              placeholder="e.g. 2023331546"
               value={roll}
               onChange={(e) => setRoll(e.target.value)}
               required
@@ -99,7 +99,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
             </label>
             <input
               type="text"
-              placeholder="e.g. Mahfuzur Rahman"
+              placeholder="e.g. Al Amin Kabir"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required

@@ -37,9 +37,13 @@ interface DBStructure {
 // In-memory cache for fast server responses
 let cachedDb: DBStructure | null = null;
 let isFirestoreLoaded = false;
+let isFirestoreQuotaExceeded = false;
 
 // Async function to load or seed Firebase Firestore
 async function loadDBAsync(): Promise<DBStructure> {
+  if (isFirestoreQuotaExceeded) {
+    if (cachedDb) return cachedDb;
+  }
   try {
     const configSnap = await getDoc(doc(firestoreDb, 'config', 'batch'));
     const studentsSnap = await getDocs(collection(firestoreDb, 'students'));
@@ -125,13 +129,18 @@ async function loadDBAsync(): Promise<DBStructure> {
     cachedDb = loadedDb;
     isFirestoreLoaded = true;
 
-    if (dirty) {
+    if (dirty && !isFirestoreQuotaExceeded) {
       await syncAllToFirestore(loadedDb);
     }
 
     return loadedDb;
-  } catch (err) {
-    console.error('Error loading DB from Firestore, falling back to local cached state:', err);
+  } catch (err: any) {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('Quota exceeded') || err?.code === 8) {
+      isFirestoreQuotaExceeded = true;
+      console.warn('⚠️ Firestore quota exceeded on database load. Serving data from in-memory/local state.');
+    } else {
+      console.error('Error loading DB from Firestore, falling back to local cached state:', err);
+    }
     if (cachedDb) return cachedDb;
     const defaultDb: DBStructure = {
       config: { ...initialConfig },
@@ -146,6 +155,9 @@ async function loadDBAsync(): Promise<DBStructure> {
 
 // Write database structure to Firestore using writeBatch
 async function syncAllToFirestore(db: DBStructure) {
+  if (isFirestoreQuotaExceeded) {
+    return;
+  }
   try {
     let batch = writeBatch(firestoreDb);
     let operationCount = 0;
@@ -189,8 +201,9 @@ async function syncAllToFirestore(db: DBStructure) {
       await batch.commit();
     }
   } catch (err: any) {
-    if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED')) {
-      console.warn('⚠️ Firestore write quota exceeded during bulk sync. Continuing with local in-memory database state.');
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('Quota exceeded') || err?.code === 8) {
+      isFirestoreQuotaExceeded = true;
+      console.warn('⚠️ Firestore write quota exceeded. Pausing Firestore syncs and operating seamlessly in local/cached mode.');
     } else if (err?.code === 'permission-denied' || err?.message?.includes('PERMISSION_DENIED')) {
       console.warn('⚠️ Firestore Permission Denied for project', firebaseConfig.projectId);
     } else {
@@ -214,10 +227,12 @@ function loadDB(): DBStructure {
 function saveDB(db: DBStructure) {
   cachedDb = db;
 
-  // Asynchronously sync state to Firestore
-  syncAllToFirestore(db).catch((err) => {
-    console.error('Async Firestore sync error:', err);
-  });
+  // Asynchronously sync state to Firestore if quota is available
+  if (!isFirestoreQuotaExceeded) {
+    syncAllToFirestore(db).catch((err) => {
+      console.error('Async Firestore sync error:', err);
+    });
+  }
 
   // Try saving to local db.json if directory is writable (gracefully fails on Vercel read-only filesystem)
   try {
@@ -233,9 +248,10 @@ function saveDB(db: DBStructure) {
 
 // Helper to delete document directly from Firestore
 function deleteFirestoreDoc(collectionName: string, docId: string) {
-  if (!docId) return;
-  deleteDoc(doc(firestoreDb, collectionName, docId)).catch((err) => {
-    if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED')) {
+  if (!docId || isFirestoreQuotaExceeded) return;
+  deleteDoc(doc(firestoreDb, collectionName, docId)).catch((err: any) => {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('Quota exceeded') || err?.code === 8) {
+      isFirestoreQuotaExceeded = true;
       console.warn(`⚠️ Firestore Quota Exceeded deleting doc ${docId} from ${collectionName}`);
     } else if (err?.code === 'permission-denied' || err?.message?.includes('PERMISSION_DENIED')) {
       console.warn(`⚠️ Firestore Permission Denied deleting doc ${docId} from ${collectionName}`);
@@ -637,24 +653,14 @@ async function startServer() {
   let lastSyncStartTime = 0;
 
   // 1. Get full fund data
-  app.get('/api/fund/data', async (req, res) => {
-    try {
-      const db = loadDB();
-      const lastSync = new Date(db.config.lastSyncTime || 0).getTime();
-      if (Date.now() - lastSync > 2000 && !isSyncingGoogleSheets && db.config.googleSheetPaymentsUrl) {
-        await performGoogleSheetSyncInternal();
-      }
-    } catch (e) {
-      console.error('Auto sync check error:', e);
-    }
-
-    const freshDb = loadDB();
-    const { studentStatuses, stats, allTargetMonths } = calculateFundDetails(freshDb);
+  app.get('/api/fund/data', (req, res) => {
+    const db = loadDB();
+    const { studentStatuses, stats, allTargetMonths } = calculateFundDetails(db);
     res.json({
-      config: freshDb.config,
-      students: freshDb.students,
-      receipts: freshDb.receipts,
-      expenses: freshDb.expenses,
+      config: db.config,
+      students: db.students,
+      receipts: db.receipts,
+      expenses: db.expenses,
       studentStatuses,
       stats,
       allTargetMonths,

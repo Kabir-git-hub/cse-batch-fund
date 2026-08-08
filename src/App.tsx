@@ -17,6 +17,7 @@ import { GoogleSheetSyncModal } from './components/modals/GoogleSheetSyncModal';
 import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './types';
 import { PRIMARY_ADMIN_EMAIL } from './config/adminConfig';
 import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw } from 'lucide-react';
+import { SecLogo } from './components/SecLogo';
 
 export default function App() {
   const [config, setConfig] = useState<BatchConfig | null>(null);
@@ -315,8 +316,8 @@ export default function App() {
         ) : (
           <>
             <Loader2 className="w-10 h-10 text-emerald-500 animate-spin mb-4" />
-            <h2 className="text-lg font-bold">Loading SEC CSE Batch-17 Fund Ledger...</h2>
-            <p className="text-xs text-slate-400 mt-1">Connecting to live database and computing monthly dues...</p>
+            <h2 className="text-lg font-bold">Loading SEC CSE-17 Fund Dashboard...</h2>
+            <p className="text-xs text-slate-400 mt-1">Developed by: Al Amin Kabir (CSE-17)</p>
           </>
         )}
       </div>
@@ -434,13 +435,14 @@ export default function App() {
       {/* Footer */}
       <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 py-6 text-xs mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-emerald-600 text-white font-bold flex items-center justify-center text-xs">
-              SEC
+          <div className="flex items-center gap-2.5">
+            <div className="bg-white p-1 rounded-full shrink-0 flex items-center justify-center overflow-hidden shadow-xs">
+              <SecLogo className="w-7 h-7" />
             </div>
-            <span>
-              <strong>Sylhet Engineering College</strong> • Department of Computer Science & Engineering (Batch-17)
-            </span>
+            <div className="flex flex-col">
+              <strong className="text-slate-200">Sylhet Engineering College</strong>
+              <span className="text-slate-400">Department of Computer Science & Engineering.</span>
+            </div>
           </div>
 
           <div className="text-slate-500 text-center sm:text-right">

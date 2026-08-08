@@ -26,6 +26,62 @@
       "id": "s1",
       "phone": "01700000501"
     },
+     {
+      "phone": "01700000502",
+      "joinedMonth": "2025-01",
+      "name": "Rajon Chowdhury",
+      "roll": "2023331502",
+      "status": "active",
+      "id": "s2"
+    },
+     {
+      "phone": "01700000504",
+      "joinedMonth": "2025-01",
+      "id": "s4",
+      "name": "Azwad Hussain Shadman",
+      "status": "active",
+      "roll": "2023331504"
+    },
+     {
+      "phone": "01700000505",
+      "joinedMonth": "2025-01",
+      "id": "s5",
+      "roll": "2023331505",
+      "name": "Ananya Chakraborty",
+      "status": "active"
+    },
+      {
+      "id": "s6",
+      "roll": "2023331506",
+      "phone": "01700000506",
+      "joinedMonth": "2025-01",
+      "name": "Ovi Deb",
+      "status": "active"
+    },
+     {
+      "name": "Arijit Bhattacharjee",
+      "roll": "2023331508",
+      "status": "active",
+      "id": "s7",
+      "phone": "01700000508",
+      "joinedMonth": "2025-01"
+    },
+    {
+      "name": "Shrabony Ghosh Tithy",
+      "joinedMonth": "2025-01",
+      "roll": "2023331509",
+      "status": "active",
+      "id": "s8",
+      "phone": "01700000509"
+    },
+    {
+      "id": "s9",
+      "status": "active",
+      "roll": "2023331510",
+      "phone": "01700000510",
+      "joinedMonth": "2025-01",
+      "name": "Md. Saadat Hossain"
+    }
     {
       "phone": "01700000511",
       "status": "active",
@@ -105,14 +161,6 @@
       "phone": "01700000520",
       "roll": "2023331520",
       "name": "Mst. Nasrin Jahan"
-    },
-    {
-      "phone": "01700000502",
-      "joinedMonth": "2025-01",
-      "name": "Rajon Chowdhury",
-      "roll": "2023331502",
-      "status": "active",
-      "id": "s2"
     },
     {
       "phone": "01700000521",
@@ -195,14 +243,6 @@
       "joinedMonth": "2025-01"
     },
     {
-      "joinedMonth": "2025-01",
-      "id": "s3",
-      "phone": "01700000503",
-      "name": "Fazlul Haque Raza Chowdhury",
-      "status": "active",
-      "roll": "2023331503"
-    },
-    {
       "roll": "2023331531",
       "name": "Nur Ahmed Marzan",
       "phone": "01700000531",
@@ -282,14 +322,7 @@
       "joinedMonth": "2025-01",
       "phone": "01700000540"
     },
-    {
-      "phone": "01700000504",
-      "joinedMonth": "2025-01",
-      "id": "s4",
-      "name": "Azwad Hussain Shadman",
-      "status": "active",
-      "roll": "2023331504"
-    },
+   
     {
       "phone": "01700000541",
       "id": "s40",
@@ -370,14 +403,7 @@
       "phone": "01700000550",
       "id": "s49"
     },
-    {
-      "phone": "01700000505",
-      "joinedMonth": "2025-01",
-      "id": "s5",
-      "roll": "2023331505",
-      "name": "Ananya Chakraborty",
-      "status": "active"
-    },
+   
     {
       "id": "s50",
       "joinedMonth": "2025-01",
@@ -458,14 +484,7 @@
       "name": "Dibyasree Dey",
       "status": "active"
     },
-    {
-      "id": "s6",
-      "roll": "2023331506",
-      "phone": "01700000506",
-      "joinedMonth": "2025-01",
-      "name": "Ovi Deb",
-      "status": "active"
-    },
+  
     {
       "roll": "2023331561",
       "name": "Md. Abul Hasnat Sajib",
@@ -498,30 +517,8 @@
       "status": "active",
       "joinedMonth": "2025-01"
     },
-    {
-      "name": "Arijit Bhattacharjee",
-      "roll": "2023331508",
-      "status": "active",
-      "id": "s7",
-      "phone": "01700000508",
-      "joinedMonth": "2025-01"
-    },
-    {
-      "name": "Shrabony Ghosh Tithy",
-      "joinedMonth": "2025-01",
-      "roll": "2023331509",
-      "status": "active",
-      "id": "s8",
-      "phone": "01700000509"
-    },
-    {
-      "id": "s9",
-      "status": "active",
-      "roll": "2023331510",
-      "phone": "01700000510",
-      "joinedMonth": "2025-01",
-      "name": "Md. Saadat Hossain"
-    }
+   
+    
   ],
   "receipts": [],
   "expenses": []
