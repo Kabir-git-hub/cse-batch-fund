@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { createServer as createViteServer } from 'vite';
+//import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import Papa from 'papaparse';
 import { initialConfig, initialStudents, initialReceipts, initialExpenses } from './src/data/defaultData.js';
