@@ -354,33 +354,33 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         
-        {/* Top Summary Cards */}
-        <StatsCards stats={stats} monthlyFee={config.monthlyFee} />
-
         {/* Tab Views */}
         {activeTab === 'dashboard' && (
-          <DashboardView
-            config={config}
-            stats={stats}
-            receipts={receipts}
-            expenses={expenses}
-            isAdmin={isAdmin}
-            onSelectReceipt={(receipt) => {
-              setSelectedReceipt(receipt);
-              setSelectedExpense(null);
-              setIsReceiptModalOpen(true);
-            }}
-            onSelectExpense={(expense) => {
-              setSelectedExpense(expense);
-              setSelectedReceipt(null);
-              setIsReceiptModalOpen(true);
-            }}
-            onOpenPaymentModal={() => {
-              setPreselectedStudent(null);
-              setIsPaymentModalOpen(true);
-            }}
-            onOpenPinModal={() => setIsAdminPinModalOpen(true)}
-          />
+          <>
+            <StatsCards stats={stats} monthlyFee={config.monthlyFee} />
+            <DashboardView
+              config={config}
+              stats={stats}
+              receipts={receipts}
+              expenses={expenses}
+              isAdmin={isAdmin}
+              onSelectReceipt={(receipt) => {
+                setSelectedReceipt(receipt);
+                setSelectedExpense(null);
+                setIsReceiptModalOpen(true);
+              }}
+              onSelectExpense={(expense) => {
+                setSelectedExpense(expense);
+                setSelectedReceipt(null);
+                setIsReceiptModalOpen(true);
+              }}
+              onOpenPaymentModal={() => {
+                setPreselectedStudent(null);
+                setIsPaymentModalOpen(true);
+              }}
+              onOpenPinModal={() => setIsAdminPinModalOpen(true)}
+            />
+          </>
         )}
 
         {activeTab === 'students' && (
