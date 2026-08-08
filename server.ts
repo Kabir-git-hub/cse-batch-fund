@@ -4,7 +4,7 @@ import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
 import Papa from 'papaparse';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc, getDocs, collection, deleteDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, getDocs, collection, deleteDoc, writeBatch } from 'firebase/firestore';
 import { initialConfig, initialStudents, initialReceipts, initialExpenses } from './src/data/defaultData.js';
 import { PRIMARY_ADMIN_EMAIL, INITIAL_ALLOWED_ADMIN_EMAILS } from './src/config/adminConfig.js';
 import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './src/types.js';
@@ -144,31 +144,55 @@ async function loadDBAsync(): Promise<DBStructure> {
   }
 }
 
-// Write entire database structure to Firestore
+// Write database structure to Firestore using writeBatch
 async function syncAllToFirestore(db: DBStructure) {
   try {
-    await setDoc(doc(firestoreDb, 'config', 'batch'), db.config);
+    let batch = writeBatch(firestoreDb);
+    let operationCount = 0;
+
+    const commitBatchIfNeeded = async () => {
+      if (operationCount >= 400) {
+        await batch.commit();
+        batch = writeBatch(firestoreDb);
+        operationCount = 0;
+      }
+    };
+
+    batch.set(doc(firestoreDb, 'config', 'batch'), db.config);
+    operationCount++;
 
     for (const student of db.students) {
       if (student.id) {
-        await setDoc(doc(firestoreDb, 'students', student.id), student);
+        batch.set(doc(firestoreDb, 'students', student.id), student);
+        operationCount++;
+        await commitBatchIfNeeded();
       }
     }
 
     for (const receipt of db.receipts) {
       if (receipt.id) {
-        await setDoc(doc(firestoreDb, 'receipts', receipt.id), receipt);
+        batch.set(doc(firestoreDb, 'receipts', receipt.id), receipt);
+        operationCount++;
+        await commitBatchIfNeeded();
       }
     }
 
     for (const expense of db.expenses) {
       if (expense.id) {
-        await setDoc(doc(firestoreDb, 'expenses', expense.id), expense);
+        batch.set(doc(firestoreDb, 'expenses', expense.id), expense);
+        operationCount++;
+        await commitBatchIfNeeded();
       }
     }
+
+    if (operationCount > 0) {
+      await batch.commit();
+    }
   } catch (err: any) {
-    if (err?.code === 'permission-denied' || err?.message?.includes('PERMISSION_DENIED')) {
-      console.warn('⚠️ Firestore Permission Denied for project', firebaseConfig.projectId, '- Please update Security Rules in Firebase Console to: allow read, write: if true;');
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.warn('⚠️ Firestore write quota exceeded during bulk sync. Continuing with local in-memory database state.');
+    } else if (err?.code === 'permission-denied' || err?.message?.includes('PERMISSION_DENIED')) {
+      console.warn('⚠️ Firestore Permission Denied for project', firebaseConfig.projectId);
     } else {
       console.error('Error syncing data to Firestore:', err);
     }
@@ -211,7 +235,9 @@ function saveDB(db: DBStructure) {
 function deleteFirestoreDoc(collectionName: string, docId: string) {
   if (!docId) return;
   deleteDoc(doc(firestoreDb, collectionName, docId)).catch((err) => {
-    if (err?.code === 'permission-denied' || err?.message?.includes('PERMISSION_DENIED')) {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.warn(`⚠️ Firestore Quota Exceeded deleting doc ${docId} from ${collectionName}`);
+    } else if (err?.code === 'permission-denied' || err?.message?.includes('PERMISSION_DENIED')) {
       console.warn(`⚠️ Firestore Permission Denied deleting doc ${docId} from ${collectionName}`);
     } else {
       console.error(`Error deleting doc ${docId} from Firestore collection ${collectionName}:`, err);
@@ -1523,20 +1549,17 @@ async function startServer() {
     }
   }
 
-  // Automatic Background Polling Timer: Syncs Google Sheet every 5 seconds in background
-  setInterval(() => {
-    performGoogleSheetSyncInternal();
-  }, 5000);
-
-  // Sync immediately on server start
-  setTimeout(() => {
-    performGoogleSheetSyncInternal();
-  }, 1000);
-
-  // Sheet Webhook Endpoint (Can be hit by Google Apps Script triggers onEdit/onChange)
+  // Sheet Webhook Endpoint (Primary trigger from Google Apps Script onEdit/onChange)
   app.all('/api/fund/sheet-webhook', async (req, res) => {
-    const result = await performGoogleSheetSyncInternal(undefined, 'force');
-    res.json(result);
+    try {
+      const url = (req.body?.url || req.query?.url) as string | undefined;
+      const type = (req.body?.type || req.query?.type || 'force') as 'payments' | 'expenses' | 'all' | 'force';
+      const result = await performGoogleSheetSyncInternal(url, type);
+      res.json(result);
+    } catch (err: any) {
+      console.error('Webhook sync error:', err);
+      res.status(500).json({ success: false, error: err.message || 'Webhook processing failed' });
+    }
   });
 
   // 8. Manual or Programmatic Sync Endpoint

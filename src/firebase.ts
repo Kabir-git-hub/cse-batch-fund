@@ -18,10 +18,10 @@ async function testConnection() {
         console.error('Please check your Firebase configuration.');
       } else if (error.message.includes('PERMISSION_DENIED') || (error as any).code === 'permission-denied') {
         console.warn('Firebase Firestore PERMISSION_DENIED: Please enable read/write rules in your Firebase Console for project sec-cse-batch-17-fund.');
+      } else if (error.message.includes('RESOURCE_EXHAUSTED') || (error as any).code === 'resource-exhausted') {
+        console.warn('Firebase Firestore RESOURCE_EXHAUSTED: Daily quota or write rate limit exceeded.');
       }
     }
   }
 }
-testConnection();
-
 export { signInWithPopup, signOut };
