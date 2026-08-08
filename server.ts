@@ -1,20 +1,22 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-//import { createServer as createViteServer } from 'vite';
+import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import Papa from 'papaparse';
-import { initialConfig, initialStudents, initialReceipts, initialExpenses } from './src/data/defaultData.js';
-import { PRIMARY_ADMIN_EMAIL, INITIAL_ALLOWED_ADMIN_EMAILS } from './src/config/adminConfig.js';
-import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './src/types.js';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, getDoc, setDoc, getDocs, collection, deleteDoc } from 'firebase/firestore';
+import firebaseConfig from './firebase-applet-config.json';
+import { initialConfig, initialStudents, initialReceipts, initialExpenses } from './src/data/defaultData';
+import { PRIMARY_ADMIN_EMAIL, INITIAL_ALLOWED_ADMIN_EMAILS } from './src/config/adminConfig';
+import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './src/types';
 
 const PORT = 3000;
 const DB_FILE = path.join(process.cwd(), 'data', 'db.json');
 
-// Ensure data folder exists
-if (!fs.existsSync(path.join(process.cwd(), 'data'))) {
-  fs.mkdirSync(path.join(process.cwd(), 'data'), { recursive: true });
-}
+// Initialize Firebase App and Firestore for server-side persistence
+const firebaseApp = initializeApp(firebaseConfig);
+const firestoreDb = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
 interface DBStructure {
   config: BatchConfig;
@@ -23,90 +25,183 @@ interface DBStructure {
   expenses: Expense[];
 }
 
-// Load DB or initialize
-function loadDB(): DBStructure {
+// In-memory cache for fast server responses
+let cachedDb: DBStructure | null = null;
+let isFirestoreLoaded = false;
+
+// Async function to load or seed Firebase Firestore
+async function loadDBAsync(): Promise<DBStructure> {
   try {
-    if (fs.existsSync(DB_FILE)) {
-      const data = fs.readFileSync(DB_FILE, 'utf-8');
-      const db: DBStructure = JSON.parse(data);
-      
-      // Auto-upgrade if DB contains old sample students (roll 210101 or student count < 50)
-      if (!db.students || db.students.length < 50 || db.students[0]?.roll?.startsWith('210')) {
-        console.log('Upgrading db.json with 64 official SEC CSE students...');
-        db.students = initialStudents;
-        db.receipts = initialReceipts;
-        db.expenses = initialExpenses;
-        saveDB(db);
-      }
-      // Ensure startMonth is 2026-08
-      if (!db.config.startMonth || db.config.startMonth === '2025-01') {
-        db.config.startMonth = '2026-08';
-        saveDB(db);
-      }
-      // Update treasurer info if default or old
-      if (!db.config.managerName || db.config.managerName.includes('MAHFUJUR') || db.config.bkashNumber !== '01790853898') {
-        db.config.managerName = 'Md. Ahosan Habib (Batch Treasurer)';
-        db.config.bkashNumber = '01790853898';
-        db.config.nagadNumber = '01790853898';
-        saveDB(db);
-      }
-      if (!db.config.googleSheetWebhookUrl || db.config.googleSheetWebhookUrl.includes('AKfycbx8tTurtt03EXP')) {
-        db.config.googleSheetWebhookUrl = 'https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec';
-        saveDB(db);
-      }
-      // Fix googleSheetPaymentsUrl if it accidentally pointed to Sheet2 or invalid sheet
-      if (db.config.googleSheetPaymentsUrl && (db.config.googleSheetPaymentsUrl.includes('Sheet2') || db.config.googleSheetPaymentsUrl.includes('Sheet%202') || db.config.googleSheetPaymentsUrl.includes('gid=503096906'))) {
-        db.config.googleSheetPaymentsUrl = 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0';
-        saveDB(db);
-      }
-      if (!db.config.googleSheetExpensesUrl || db.config.googleSheetExpensesUrl === db.config.googleSheetPaymentsUrl) {
-        db.config.googleSheetExpensesUrl = 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/gviz/tq?tqx=out:csv&sheet=Sheet2';
-        saveDB(db);
-      }
-      // Clean up fake students created from voucher numbers if any
-      const prevStudentCount = db.students.length;
-      db.students = db.students.filter((s) => !s.roll.startsWith('SEC17-EXP'));
-      if (db.students.length !== prevStudentCount) {
-        db.receipts = db.receipts.filter((r) => db.students.some((s) => s.id === r.studentId || s.roll === r.studentRoll));
-        saveDB(db);
-      }
-      if (!db.config.allowedAdminEmails || db.config.allowedAdminEmails.length === 0) {
-        db.config.allowedAdminEmails = [...INITIAL_ALLOWED_ADMIN_EMAILS];
-        saveDB(db);
-      } else if (!db.config.allowedAdminEmails.map(e => e.toLowerCase()).includes(PRIMARY_ADMIN_EMAIL.toLowerCase())) {
-        db.config.allowedAdminEmails.unshift(PRIMARY_ADMIN_EMAIL);
-        saveDB(db);
-      }
+    const configSnap = await getDoc(doc(firestoreDb, 'config', 'batch'));
+    const studentsSnap = await getDocs(collection(firestoreDb, 'students'));
+    const receiptsSnap = await getDocs(collection(firestoreDb, 'receipts'));
+    const expensesSnap = await getDocs(collection(firestoreDb, 'expenses'));
 
-      // Always ensure deletedExpenseVouchers list is reset
-      if (db.config.deletedExpenseVouchers && db.config.deletedExpenseVouchers.length > 0) {
-        db.config.deletedExpenseVouchers = [];
-        saveDB(db);
-      }
+    let config: BatchConfig = configSnap.exists() ? (configSnap.data() as BatchConfig) : { ...initialConfig };
+    let students: Student[] = studentsSnap.docs.map((d) => d.data() as Student);
+    let receipts: PaymentReceipt[] = receiptsSnap.docs.map((d) => d.data() as PaymentReceipt);
+    let expenses: Expense[] = expensesSnap.docs.map((d) => d.data() as Expense);
 
-      return db;
+    // If Firestore is empty, seed initial data from defaultData
+    if (!configSnap.exists() || students.length === 0) {
+      console.log('Seeding initial database to Firebase Firestore...');
+      config = { ...initialConfig };
+      students = [...initialStudents];
+      receipts = [...initialReceipts];
+      expenses = [...initialExpenses];
+
+      const seedDb: DBStructure = { config, students, receipts, expenses };
+      await syncAllToFirestore(seedDb);
+    }
+
+    let dirty = false;
+
+    // Auto-upgrade if DB contains old sample students
+    if (!students || students.length < 50 || students[0]?.roll?.startsWith('210')) {
+      console.log('Upgrading database with official SEC CSE students...');
+      students = [...initialStudents];
+      receipts = [...initialReceipts];
+      expenses = [...initialExpenses];
+      dirty = true;
+    }
+
+    if (!config.startMonth || config.startMonth === '2025-01') {
+      config.startMonth = '2026-08';
+      dirty = true;
+    }
+
+    if (!config.managerName || config.managerName.includes('MAHFUJUR') || config.bkashNumber !== '01790853898') {
+      config.managerName = 'Md. Ahosan Habib (Batch Treasurer)';
+      config.bkashNumber = '01790853898';
+      config.nagadNumber = '01790853898';
+      dirty = true;
+    }
+
+    if (!config.googleSheetWebhookUrl || config.googleSheetWebhookUrl.includes('AKfycbx8tTurtt03EXP')) {
+      config.googleSheetWebhookUrl = 'https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec';
+      dirty = true;
+    }
+
+    if (config.googleSheetPaymentsUrl && (config.googleSheetPaymentsUrl.includes('Sheet2') || config.googleSheetPaymentsUrl.includes('Sheet%202') || config.googleSheetPaymentsUrl.includes('gid=503096906'))) {
+      config.googleSheetPaymentsUrl = 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0';
+      dirty = true;
+    }
+
+    if (!config.googleSheetExpensesUrl || config.googleSheetExpensesUrl === config.googleSheetPaymentsUrl) {
+      config.googleSheetExpensesUrl = 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/gviz/tq?tqx=out:csv&sheet=Sheet2';
+      dirty = true;
+    }
+
+    const prevStudentCount = students.length;
+    students = students.filter((s) => !s.roll.startsWith('SEC17-EXP'));
+    if (students.length !== prevStudentCount) {
+      receipts = receipts.filter((r) => students.some((s) => s.id === r.studentId || s.roll === r.studentRoll));
+      dirty = true;
+    }
+
+    if (!config.allowedAdminEmails || config.allowedAdminEmails.length === 0) {
+      config.allowedAdminEmails = [...INITIAL_ALLOWED_ADMIN_EMAILS];
+      dirty = true;
+    } else if (!config.allowedAdminEmails.map((e) => e.toLowerCase()).includes(PRIMARY_ADMIN_EMAIL.toLowerCase())) {
+      config.allowedAdminEmails.unshift(PRIMARY_ADMIN_EMAIL);
+      dirty = true;
+    }
+
+    if (config.deletedExpenseVouchers && config.deletedExpenseVouchers.length > 0) {
+      config.deletedExpenseVouchers = [];
+      dirty = true;
+    }
+
+    const loadedDb: DBStructure = { config, students, receipts, expenses };
+    cachedDb = loadedDb;
+    isFirestoreLoaded = true;
+
+    if (dirty) {
+      await syncAllToFirestore(loadedDb);
+    }
+
+    return loadedDb;
+  } catch (err) {
+    console.error('Error loading DB from Firestore, falling back to local cached state:', err);
+    if (cachedDb) return cachedDb;
+    const defaultDb: DBStructure = {
+      config: { ...initialConfig },
+      students: [...initialStudents],
+      receipts: [...initialReceipts],
+      expenses: [...initialExpenses],
+    };
+    cachedDb = defaultDb;
+    return defaultDb;
+  }
+}
+
+// Write entire database structure to Firestore
+async function syncAllToFirestore(db: DBStructure) {
+  try {
+    await setDoc(doc(firestoreDb, 'config', 'batch'), db.config);
+
+    for (const student of db.students) {
+      if (student.id) {
+        await setDoc(doc(firestoreDb, 'students', student.id), student);
+      }
+    }
+
+    for (const receipt of db.receipts) {
+      if (receipt.id) {
+        await setDoc(doc(firestoreDb, 'receipts', receipt.id), receipt);
+      }
+    }
+
+    for (const expense of db.expenses) {
+      if (expense.id) {
+        await setDoc(doc(firestoreDb, 'expenses', expense.id), expense);
+      }
     }
   } catch (err) {
-    console.error('Error reading db.json, reinitializing...', err);
+    console.error('Error syncing data to Firestore:', err);
   }
-
-  const defaultDb: DBStructure = {
-    config: initialConfig,
-    students: initialStudents,
-    receipts: initialReceipts,
-    expenses: initialExpenses,
-  };
-  saveDB(defaultDb);
-  return defaultDb;
 }
 
+// Synchronous getter for in-memory DB state
+function loadDB(): DBStructure {
+  if (cachedDb) return cachedDb;
+  return {
+    config: { ...initialConfig },
+    students: [...initialStudents],
+    receipts: [...initialReceipts],
+    expenses: [...initialExpenses],
+  };
+}
+
+// Save DB state to Firestore and attempt local db.json save gracefully
 function saveDB(db: DBStructure) {
+  cachedDb = db;
+
+  // Asynchronously sync state to Firestore
+  syncAllToFirestore(db).catch((err) => {
+    console.error('Async Firestore sync error:', err);
+  });
+
+  // Try saving to local db.json if directory is writable (gracefully fails on Vercel read-only filesystem)
   try {
+    const dataDir = path.dirname(DB_FILE);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
   } catch (err) {
-    console.error('Error saving db.json:', err);
+    // Read-only filesystem on Vercel, ignore file write error
   }
 }
+
+// Helper to delete document directly from Firestore
+function deleteFirestoreDoc(collectionName: string, docId: string) {
+  if (!docId) return;
+  deleteDoc(doc(firestoreDb, collectionName, docId)).catch((err) => {
+    console.error(`Error deleting doc ${docId} from Firestore collection ${collectionName}:`, err);
+  });
+}
+
 
 // Helper to generate months array from startMonth to endMonth
 function getMonthsRange(startYYYYMM: string, endYYYYMM: string): string[] {
@@ -220,6 +315,10 @@ function calculateFundDetails(db: DBStructure) {
 }
 
 async function startServer() {
+  // Load database state from Firestore on boot
+  console.log('Booting SEC CSE Fund Server, fetching database from Firestore...');
+  await loadDBAsync();
+
   const app = express();
   app.use(express.json({ limit: '10mb' }));
 
@@ -629,6 +728,7 @@ async function startServer() {
     saveDB(db);
 
     if (deletedReceipt) {
+      deleteFirestoreDoc('receipts', deletedReceipt.id);
       syncToGoogleSheetWebhook('delete_payment', {
         studentRoll: deletedReceipt.studentRoll,
         studentName: deletedReceipt.studentName,
@@ -696,6 +796,7 @@ async function startServer() {
     const deletedExpense = db.expenses.find((e) => e.id === id || e.voucherNo === id);
     if (deletedExpense) {
       db.expenses = db.expenses.filter((e) => e.id !== deletedExpense.id && e.voucherNo !== deletedExpense.voucherNo);
+      deleteFirestoreDoc('expenses', deletedExpense.id);
       saveDB(db);
 
       syncToGoogleSheetWebhook('delete_expense', {
@@ -1536,11 +1637,11 @@ INSTRUCTIONS:
 
   // Vite middleware in dev or static files in production
   if (process.env.NODE_ENV !== 'production') {
-    //const vite = await createViteServer({
-     // server: { middlewareMode: true },
-     // appType: 'spa',
-   // });
-   // app.use(vite.middlewares);
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));

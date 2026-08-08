@@ -1,25 +1,76 @@
 {
   "entities": {
-    "AdminConfig": {
-      "title": "AdminConfig",
-      "description": "System admin config and authorized emails",
+    "BatchConfig": {
+      "title": "BatchConfig",
+      "description": "System admin config and batch settings",
       "type": "object",
       "properties": {
-        "allowedAdminEmails": {
-          "type": "array",
-          "description": "List of authorized admin gmail addresses"
-        },
-        "adminPin": {
-          "type": "string",
-          "description": "Admin security PIN"
-        }
+        "batchName": { "type": "string" },
+        "institution": { "type": "string" },
+        "managerName": { "type": "string" },
+        "monthlyFee": { "type": "number" },
+        "startMonth": { "type": "string" },
+        "allowedAdminEmails": { "type": "array" }
+      }
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Student record in the batch",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roll": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string" },
+        "joinedMonth": { "type": "string" }
+      }
+    },
+    "PaymentReceipt": {
+      "title": "PaymentReceipt",
+      "description": "Payment receipt record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "receiptNo": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentRoll": { "type": "string" },
+        "studentName": { "type": "string" },
+        "amount": { "type": "number" },
+        "monthsPaid": { "type": "array" },
+        "paymentDate": { "type": "string" }
+      }
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Expense record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "voucherNo": { "type": "string" },
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "date": { "type": "string" }
       }
     }
   },
   "firestore": {
-    "/config/admin": {
-      "schema": "AdminConfig",
-      "description": "System configuration"
+    "/config/batch": {
+      "schema": "BatchConfig",
+      "description": "System batch configuration"
+    },
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Students collection"
+    },
+    "/receipts/{receiptId}": {
+      "schema": "PaymentReceipt",
+      "description": "Payment receipts collection"
+    },
+    "/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Expenses collection"
     }
   }
 }

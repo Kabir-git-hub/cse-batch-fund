@@ -13,10 +13,9 @@
       "alaminkabbirrrr@gmail.com"
     ],
     "googleSheetPaymentsUrl": "https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0",
-    "googleSheetExpensesUrl": "https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/gviz/tq?tqx=out:csv&sheet=Sheet2",
-    "googleSheetWebhookUrl": "https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec",
-    "lastSyncTime": "2026-08-07T19:32:11.127Z",
-    "deletedExpenseVouchers": []
+    "googleSheetExpensesUrl": "https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=503096906#gid=503096906",
+    "googleSheetWebhookUrl": "https://script.google.com/macros/s/AKfycbxG7rX2EvCco2QBGYUGHGRZCPxfLE2Lco0fHQlUfDgNVAhrHU4lVNbL__lRmIskYew-/exec",
+    "lastSyncTime": "2026-08-08T07:55:46.160Z"
   },
   "students": [
     {

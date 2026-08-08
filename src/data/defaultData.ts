@@ -1,5 +1,5 @@
 import { BatchConfig, Student, PaymentReceipt, Expense } from '../types';
-import { INITIAL_ALLOWED_ADMIN_EMAILS } from '../config/adminConfig.js';
+import { INITIAL_ALLOWED_ADMIN_EMAILS } from '../config/adminConfig';
 
 export const initialConfig: BatchConfig = {
   batchName: 'CSE Batch-17',
