@@ -77,53 +77,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="space-y-6">
       
-      {/* Batch Payment Information Banner */}
-      <div className="bg-gradient-to-r from-emerald-900 via-slate-900 to-teal-900 text-white rounded-2xl p-6 border border-emerald-700/40 shadow-md">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/20 text-emerald-300 rounded-full text-xs font-semibold border border-emerald-500/30">
-              <Info className="w-3.5 h-3.5" /> Batch Fund Guidelines
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-              Sylhet Engineering College — CSE Batch-17
-            </h2>
-            <p className="text-slate-300 text-sm leading-relaxed">
-              Every student contributes <strong className="text-emerald-300 font-semibold">৳ 50 BDT / Month</strong>. This fund is transparently managed for batch events, sports tournaments, lab/academic contingencies, and student welfare.
-            </p>
-            
-            <div className="pt-2 flex flex-wrap gap-3 text-xs text-slate-300">
-              <div className="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
-                <CreditCard className="w-4 h-4 text-emerald-400" />
-                <span>bKash Personal: <strong className="text-white font-mono">{config.bkashNumber || '01790853898'}</strong></span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
-                <CreditCard className="w-4 h-4 text-amber-400" />
-                <span>Nagad Personal: <strong className="text-white font-mono">{config.nagadNumber || '01790853898'}</strong></span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
-                <Phone className="w-4 h-4 text-teal-400" />
-                <span>Treasurer: <strong className="text-white">{config.managerName || 'Md. Ahosan Habib'}</strong></span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-emerald-500/15 px-3 py-1.5 rounded-lg border border-emerald-500/30 text-emerald-300 font-semibold">
-                <Info className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>রেফারেন্সে (Roll + Name) দিবে</span>
-              </div>
-            </div>
-          </div>
-
-          {isAdmin && (
-            <div className="shrink-0 flex flex-col gap-2">
-              <button
-                onClick={onOpenPaymentModal}
-                className="px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-bold text-sm shadow-lg hover:shadow-emerald-500/20 transition flex items-center justify-center gap-2"
-              >
-                <CheckCircle className="w-4 h-4" /> Collect Money
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Visual Analytics Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
