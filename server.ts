@@ -115,9 +115,13 @@ async function loadDBAsync(): Promise<DBStructure> {
     if (!config.allowedAdminEmails || config.allowedAdminEmails.length === 0) {
       config.allowedAdminEmails = [...INITIAL_ALLOWED_ADMIN_EMAILS];
       dirty = true;
-    } else if (!config.allowedAdminEmails.map((e) => e.toLowerCase()).includes(PRIMARY_ADMIN_EMAIL.toLowerCase())) {
-      config.allowedAdminEmails.unshift(PRIMARY_ADMIN_EMAIL);
-      dirty = true;
+    } else {
+      INITIAL_ALLOWED_ADMIN_EMAILS.forEach((initialEmail) => {
+        if (!config.allowedAdminEmails.map((e) => e.toLowerCase()).includes(initialEmail.toLowerCase())) {
+          config.allowedAdminEmails.push(initialEmail);
+          dirty = true;
+        }
+      });
     }
 
     if (config.deletedExpenseVouchers && config.deletedExpenseVouchers.length > 0) {
@@ -402,7 +406,10 @@ async function startServer() {
 
     const pin = reqBody.pin || reqQuery.pin;
     const adminEmail = reqBody.adminEmail || reqBody.email || reqQuery.adminEmail || reqQuery.email;
-    const allowed = dbConfig.allowedAdminEmails || INITIAL_ALLOWED_ADMIN_EMAILS;
+    const allowed = Array.from(new Set([
+      ...(dbConfig.allowedAdminEmails || []),
+      ...INITIAL_ALLOWED_ADMIN_EMAILS
+    ].map((e) => (e || '').trim().toLowerCase())));
 
     const checkEmail = (adminEmail || '').trim().toLowerCase();
     if (checkEmail && allowed.some((e) => e.trim().toLowerCase() === checkEmail)) {
@@ -515,7 +522,10 @@ async function startServer() {
 
       const verifiedEmail = (userInfo.email || '').trim().toLowerCase();
       const db = loadDB();
-      const allowed = db.config?.allowedAdminEmails || INITIAL_ALLOWED_ADMIN_EMAILS;
+      const allowed = Array.from(new Set([
+        ...(db.config?.allowedAdminEmails || []),
+        ...INITIAL_ALLOWED_ADMIN_EMAILS
+      ].map((e) => (e || '').trim().toLowerCase())));
       const isAllowed = allowed.some((e) => e && e.trim().toLowerCase() === verifiedEmail);
 
       res.send(`
@@ -574,7 +584,10 @@ async function startServer() {
     try {
       const { email, pin, verifiedByGoogle } = req.body || {};
       const db = loadDB();
-      const allowed = db.config?.allowedAdminEmails || INITIAL_ALLOWED_ADMIN_EMAILS;
+      const allowed = Array.from(new Set([
+        ...(db.config?.allowedAdminEmails || []),
+        ...INITIAL_ALLOWED_ADMIN_EMAILS
+      ].map((e) => (e || '').trim().toLowerCase())));
       
       const emailToVerify = (email || '').trim().toLowerCase();
       const pinToVerify = (pin || '').trim();
