@@ -36,7 +36,7 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Category Pills & Add Expense Header */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
             <Receipt className="w-5 h-5 text-rose-600" /> Batch Expenses & Vouchers
@@ -76,7 +76,7 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
       </div>
 
       {/* Expense Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-700">
             <thead className="bg-slate-50 text-xs uppercase font-semibold text-slate-500 border-b border-slate-200 tracking-wider">

@@ -75,7 +75,7 @@ export const AiAssistantView: React.FC = () => {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
+    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden flex flex-col h-[600px]">
       
       {/* Header */}
       <div className="bg-slate-900 text-white p-4 border-b border-slate-800 flex items-center justify-between">

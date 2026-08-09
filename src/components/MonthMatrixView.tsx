@@ -69,7 +69,7 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Search, Filter & Scroll Control Header */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-4">
+      <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div>
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -183,7 +183,7 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
       </div>
 
       {/* Grid Table Container with Horizontal Scroll Ref */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden relative">
+      <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden relative">
         {/* Table Right Arrow Indicator Overlay */}
         <div className="absolute right-2 top-3 z-30 pointer-events-none hidden sm:flex items-center gap-1 bg-slate-900/80 text-emerald-300 text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur-xs">
           <span>Scroll ▶</span>
@@ -207,7 +207,9 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-sans">
-              {filtered.map((item) => {
+              {[...filtered]
+                .sort((a, b) => Number(a.student.roll) - Number(b.student.roll))
+                .map((item) => {
                 const paidSet = new Set(item.monthsPaidList);
                 return (
                   <tr key={item.student.id} className="hover:bg-slate-50/90 transition">

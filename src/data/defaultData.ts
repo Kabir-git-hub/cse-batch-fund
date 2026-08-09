@@ -14,7 +14,7 @@ export const initialConfig: BatchConfig = {
   allowedAdminEmails: INITIAL_ALLOWED_ADMIN_EMAILS,
   googleSheetPaymentsUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0',
   googleSheetExpensesUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=503096906#gid=503096906',
-  googleSheetWebhookUrl: 'https://script.google.com/macros/s/AKfycbxG7rX2EvCco2QBGYUGHGRZCPxfLE2Lco0fHQlUfDgNVAhrHU4lVNbL__lRmIskYew-/exec',
+  googleSheetWebhookUrl: 'https://script.google.com/macros/s/AKfycbwrLnKtnsIUpapVSRlVGEYU9WYNWBpLLFchrq_hFtYhTIJp-ltUhyHVKYtL02QwhbR7/exec',
   lastSyncTime: new Date().toISOString()
 };
 

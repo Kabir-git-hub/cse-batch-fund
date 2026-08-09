@@ -36,7 +36,7 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Search & Filter Header Bar */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col md:flex-row items-center justify-between gap-4">
         
         {/* Search input */}
         <div className="relative w-full md:w-80">
@@ -107,7 +107,7 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
       </div>
 
       {/* Roster Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-700">
             <thead className="bg-slate-50 text-xs uppercase font-semibold text-slate-500 border-b border-slate-200 tracking-wider">
@@ -119,7 +119,9 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredStudents.map((item) => (
+              {[...filteredStudents]
+                .sort((a, b) => Number(a.student.roll) - Number(b.student.roll))
+                .map((item) => (
                 <tr
                   key={item.student.id}
                   className="hover:bg-slate-50/80 transition cursor-pointer"

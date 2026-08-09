@@ -325,7 +325,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
+    <div className="min-h-screen bg-[#f4f9f6] text-slate-900 flex flex-col font-sans">
       
       {/* Top Navbar */}
       <Navbar
@@ -433,20 +433,20 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 py-6 text-xs mt-12">
+      <footer className="bg-white text-slate-600 border-t border-slate-200/80 py-6 text-xs mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
-            <div className="bg-white p-1 rounded-full shrink-0 flex items-center justify-center overflow-hidden shadow-xs">
+            <div className="bg-slate-50 p-1 rounded-full shrink-0 flex items-center justify-center overflow-hidden border border-slate-200/80 shadow-2xs">
               <SecLogo className="w-7 h-7" />
             </div>
             <div className="flex flex-col">
-              <strong className="text-slate-200">Sylhet Engineering College</strong>
-              <span className="text-slate-400">Department of Computer Science & Engineering.</span>
+              <strong className="text-slate-900 font-bold">Sylhet Engineering College</strong>
+              <span className="text-slate-500 font-medium">Department of Computer Science & Engineering.</span>
             </div>
           </div>
 
-          <div className="text-slate-500 text-center sm:text-right">
-            <span>Developed by: <strong>Al Amin Kabir (CSE-17)</strong></span>
+          <div className="text-slate-500 text-center sm:text-right font-medium">
+            <span>Developed by: <strong className="text-slate-800">Al Amin Kabir (CSE-17)</strong></span>
           </div>
         </div>
       </footer>
