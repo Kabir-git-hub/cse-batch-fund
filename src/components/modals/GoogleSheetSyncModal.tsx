@@ -22,7 +22,7 @@ export const GoogleSheetSyncModal: React.FC<GoogleSheetSyncModalProps> = ({
 }) => {
   const [sheetUrl, setSheetUrl] = useState(config?.googleSheetPaymentsUrl || '');
   const [webhookUrl, setWebhookUrl] = useState(config?.googleSheetWebhookUrl || '');
-  const [allowedEmails, setAllowedEmails] = useState<string[]>(config?.allowedAdminEmails || INITIAL_ALLOWED_ADMIN_EMAILS);
+  const [allowedEmails, setAllowedEmails] = useState<string[]>(config?.allowedAdminEmails || []);
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [addingEmail, setAddingEmail] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -38,7 +38,7 @@ export const GoogleSheetSyncModal: React.FC<GoogleSheetSyncModalProps> = ({
     if (config && isOpen && !prevIsOpen.current) {
       setSheetUrl(config.googleSheetPaymentsUrl || '');
       setWebhookUrl(config.googleSheetWebhookUrl || '');
-      setAllowedEmails(config.allowedAdminEmails || INITIAL_ALLOWED_ADMIN_EMAILS);
+      setAllowedEmails(config.allowedAdminEmails || []);
     }
     prevIsOpen.current = isOpen;
   }, [config, isOpen]);
