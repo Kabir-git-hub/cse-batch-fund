@@ -79,9 +79,20 @@ async function loadDBAsync(): Promise<DBStructure> {
       }
     }
 
+    let dirty = false;
+
+    // Clean up any legacy dummy expense (e.g. title 'ws') from Firestore & memory
+    for (const exp of expenses) {
+      if (exp.title === 'ws' || exp.id.includes('1786824706078') || exp.voucherNo === 'SEC17-EXP-897') {
+        deleteFirestoreDoc('expenses', exp.id);
+        dirty = true;
+      }
+    }
+    expenses = expenses.filter((e) => e.title !== 'ws' && !e.id.includes('1786824706078') && e.voucherNo !== 'SEC17-EXP-897');
+
     // If both Firestore and localDb were completely empty, seed initial data from defaultData
     if (!configSnap.exists() && students.length === 0) {
-      console.log('Seeding initial database to Firebase Firestore...');
+      console.log('Initializing database config in Firebase Firestore...');
       config = { ...initialConfig };
       students = [...initialStudents];
       receipts = [...initialReceipts];
@@ -89,11 +100,7 @@ async function loadDBAsync(): Promise<DBStructure> {
 
       const seedDb: DBStructure = { config, students, receipts, expenses };
       await syncAllToFirestore(seedDb);
-    } else if (students.length === 0) {
-      students = [...initialStudents];
     }
-
-    let dirty = false;
 
     if (!config.startMonth || config.startMonth === '2025-01') {
       config.startMonth = '2026-08';
