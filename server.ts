@@ -241,6 +241,109 @@ async function syncAllToFirestore(db: DBStructure) {
   }
 }
 
+// Master Overwrite Firestore: deletes orphaned old test documents and updates latest collection docs
+async function overwriteFirestoreWithData(db: DBStructure) {
+  if (isFirestoreQuotaExceeded) return;
+  try {
+    const [existingStudentsSnap, existingExpensesSnap, existingReceiptsSnap] = await Promise.all([
+      getDocs(collection(firestoreDb, 'students')).catch(() => null),
+      getDocs(collection(firestoreDb, 'expenses')).catch(() => null),
+      getDocs(collection(firestoreDb, 'receipts')).catch(() => null),
+    ]);
+
+    const newStudentIds = new Set(db.students.map((s) => s.id));
+    const newExpenseIds = new Set(db.expenses.map((e) => e.id));
+    const newReceiptIds = new Set(db.receipts.map((r) => r.id));
+
+    let batch = writeBatch(firestoreDb);
+    let count = 0;
+
+    const commitBatchIfNeeded = async () => {
+      if (count >= 400) {
+        await batch.commit();
+        batch = writeBatch(firestoreDb);
+        count = 0;
+      }
+    };
+
+    // Delete removed/old test students
+    if (existingStudentsSnap) {
+      for (const docSnap of existingStudentsSnap.docs) {
+        if (!newStudentIds.has(docSnap.id)) {
+          batch.delete(docSnap.ref);
+          count++;
+          await commitBatchIfNeeded();
+        }
+      }
+    }
+
+    // Delete removed/old test expenses
+    if (existingExpensesSnap) {
+      for (const docSnap of existingExpensesSnap.docs) {
+        if (!newExpenseIds.has(docSnap.id)) {
+          batch.delete(docSnap.ref);
+          count++;
+          await commitBatchIfNeeded();
+        }
+      }
+    }
+
+    // Delete removed/old test receipts
+    if (existingReceiptsSnap) {
+      for (const docSnap of existingReceiptsSnap.docs) {
+        if (!newReceiptIds.has(docSnap.id)) {
+          batch.delete(docSnap.ref);
+          count++;
+          await commitBatchIfNeeded();
+        }
+      }
+    }
+
+    // Write new config
+    batch.set(doc(firestoreDb, 'config', 'batch'), db.config);
+    count++;
+
+    // Write students
+    for (const student of db.students) {
+      if (student.id) {
+        batch.set(doc(firestoreDb, 'students', student.id), student);
+        count++;
+        await commitBatchIfNeeded();
+      }
+    }
+
+    // Write expenses
+    for (const expense of db.expenses) {
+      if (expense.id) {
+        batch.set(doc(firestoreDb, 'expenses', expense.id), expense);
+        count++;
+        await commitBatchIfNeeded();
+      }
+    }
+
+    // Write receipts
+    for (const receipt of db.receipts) {
+      if (receipt.id) {
+        batch.set(doc(firestoreDb, 'receipts', receipt.id), receipt);
+        count++;
+        await commitBatchIfNeeded();
+      }
+    }
+
+    if (count > 0) {
+      await batch.commit();
+    }
+    console.log('[Firestore Sync] Overwrite committed successfully to Firestore!');
+  } catch (err: any) {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('Quota exceeded') || err?.code === 8) {
+      isFirestoreQuotaExceeded = true;
+      console.warn('⚠️ Firestore write quota exceeded during master overwrite.');
+    } else {
+      console.error('Error in overwriteFirestoreWithData:', err);
+    }
+  }
+}
+
 // Synchronous getter for in-memory DB state with local file fallback
 function loadDB(): DBStructure {
   if (cachedDb) return cachedDb;
@@ -1237,8 +1340,8 @@ async function startServer() {
   }
 
   // Core Automatic Google Sheet Sync Engine
-  async function performGoogleSheetSyncInternal(targetUrl?: string, type: string = 'all') {
-    if (isSyncingGoogleSheets && Date.now() - lastSyncStartTime < 5000 && !targetUrl && type !== 'force') {
+  async function performGoogleSheetSyncInternal(targetUrl?: string, type: string = 'all', directPayload?: any) {
+    if (isSyncingGoogleSheets && Date.now() - lastSyncStartTime < 5000 && !targetUrl && type !== 'force' && !directPayload) {
       return { success: true, message: 'Sync already in progress' };
     }
 
@@ -1247,8 +1350,146 @@ async function startServer() {
     try {
       const db = loadDB();
 
+      // Check for direct payload or doGet webhook JSON response first
+      let jsonPayload: any = directPayload || null;
+
+      if (!jsonPayload) {
+        const scriptUrl = (targetUrl && targetUrl.includes('script.google.com'))
+          ? targetUrl
+          : (db.config.googleSheetWebhookUrl || 'https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec');
+
+        if (scriptUrl && scriptUrl.includes('script.google.com')) {
+          try {
+            console.log(`[Master Sync] Checking doGet on Google Apps Script Webhook (${scriptUrl})...`);
+            const webhookRes = await fetch(scriptUrl, {
+              method: 'GET',
+              headers: { Accept: 'application/json' },
+              redirect: 'follow',
+            });
+
+            const rawText = await webhookRes.text();
+            try {
+              const parsed = JSON.parse(rawText);
+              if (parsed && (Array.isArray(parsed.students) || Array.isArray(parsed.expenses) || (parsed.data && (Array.isArray(parsed.data.students) || Array.isArray(parsed.data.expenses))))) {
+                jsonPayload = parsed;
+              }
+            } catch (e) {
+              // Not JSON
+            }
+          } catch (webhookErr) {
+            console.warn('[Master Sync] Webhook doGet fetch error, proceeding to CSV parser:', webhookErr);
+          }
+        }
+      }
+
+      // If we got structured students or expenses from doGet / payload: MASTER OVERWRITE
+      if (jsonPayload && (Array.isArray(jsonPayload.students) || Array.isArray(jsonPayload.expenses) || (jsonPayload.data && (Array.isArray(jsonPayload.data.students) || Array.isArray(jsonPayload.data.expenses))))) {
+        console.log('[Master Sync] Processing structured JSON payload from Google Sheet...');
+        const incomingStudents = Array.isArray(jsonPayload.students)
+          ? jsonPayload.students
+          : (jsonPayload.data?.students || []);
+        const incomingExpenses = Array.isArray(jsonPayload.expenses)
+          ? jsonPayload.expenses
+          : (jsonPayload.data?.expenses || []);
+
+        const parsedStudents: Student[] = [];
+        const parsedReceipts: PaymentReceipt[] = [];
+
+        for (const s of incomingStudents) {
+          const roll = String(s.roll || s.rollNo || s.studentRoll || s.id || '').trim();
+          if (!roll) continue;
+          const rollClean = cleanRoll(roll) || roll;
+          const id = s.id ? String(s.id).trim() : 's_' + rollClean;
+          const name = String(s.name || s.studentName || `Student ${roll}`).trim();
+          const phone = String(s.phone || s.mobile || s.contact || '').trim();
+          const status = s.status || 'active';
+          const joinedMonth = s.joinedMonth || db.config.startMonth || '2026-08';
+
+          parsedStudents.push({ id, roll, name, phone, status, joinedMonth });
+
+          const amountVal = Number(s.paid || s.totalPaid || s.amount || s.totalAmount || s.paidAmount || 0);
+          let monthsPaid: string[] = [];
+          if (Array.isArray(s.monthsPaid)) {
+            monthsPaid = s.monthsPaid.map(String);
+          } else if (typeof s.monthsPaid === 'string' && s.monthsPaid.trim()) {
+            const matches = s.monthsPaid.match(/20\d{2}-(0[1-9]|1[0-2])/g);
+            monthsPaid = matches && matches.length > 0 ? matches : s.monthsPaid.split(/[\s,]+/).filter(Boolean);
+          }
+
+          if (amountVal > 0) {
+            if (monthsPaid.length === 0) {
+              monthsPaid = getNextUnpaidMonths(new Set(), amountVal, db.config.monthlyFee || 50, db.config.startMonth || '2026-08');
+            }
+
+            const receiptNo = s.receiptNo || `SEC17-PAY-GS${Math.floor(1000 + Math.random() * 9000)}`;
+            parsedReceipts.push({
+              id: 'r_gs_' + rollClean,
+              receiptNo,
+              studentId: id,
+              studentRoll: roll,
+              studentName: name,
+              amount: amountVal,
+              monthsPaid,
+              paymentDate: s.paymentDate || s.date || new Date().toISOString().split('T')[0],
+              paymentMethod: s.paymentMethod || 'Bank',
+              transactionRef: s.transactionRef || ('GS-' + rollClean),
+              collectorName: 'Google Sheets Live Sync',
+              notes: s.notes || 'Master Synced from Google Sheet',
+              verified: true,
+            });
+          }
+        }
+
+        const parsedExpenses: Expense[] = [];
+        for (let i = 0; i < incomingExpenses.length; i++) {
+          const exp = incomingExpenses[i];
+          const title = String(exp.title || exp.description || exp.purpose || exp.item || exp.name || '').trim();
+          const amount = Number(exp.amount || exp.cost || exp.total || 0);
+          if (!title && amount <= 0) continue;
+
+          const voucherNo = String(exp.voucherNo || exp.voucher || exp.vno || `SEC17-EXP-${String(i + 1).padStart(3, '0')}`).trim();
+          const id = exp.id ? String(exp.id).trim() : `e_gs_${voucherNo.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          const category = parseExpenseCategory(exp.category || exp.type || 'Other');
+          const date = String(exp.date || exp.time || new Date().toISOString().split('T')[0]).trim();
+          const spentBy = String(exp.spentBy || exp.paidBy || exp.person || 'Batch Fund').trim();
+          const referenceDocUrl = exp.referenceDocUrl || exp.voucherDocUrl || exp.url || '';
+          const notes = exp.notes || exp.remark || exp.details || 'Master Synced from Google Sheet';
+
+          parsedExpenses.push({
+            id,
+            voucherNo,
+            title: title || 'Expense',
+            amount,
+            category,
+            date,
+            spentBy,
+            referenceDocUrl,
+            notes,
+          });
+        }
+
+        if (parsedStudents.length > 0) {
+          db.students = parsedStudents;
+          db.receipts = parsedReceipts;
+        }
+        db.expenses = parsedExpenses;
+        db.config.lastSyncTime = new Date().toISOString();
+
+        await overwriteFirestoreWithData(db);
+        saveDB(db);
+
+        return {
+          success: true,
+          message: `Master Google Sheet sync complete! Updated ${parsedStudents.length} students and ${parsedExpenses.length} expenses.`,
+          studentsCount: parsedStudents.length,
+          expensesCount: parsedExpenses.length,
+          paymentsImported: parsedReceipts.length,
+          expensesImported: parsedExpenses.length,
+        };
+      }
+
       const urlsToSync: { url: string; syncType: string }[] = [];
-    if (targetUrl) {
+    if (targetUrl && !targetUrl.includes('script.google.com')) {
       urlsToSync.push({ url: targetUrl, syncType: type });
       if (type === 'all' || type === 'payments' || type === 'expenses') {
         const matches = targetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
@@ -1731,8 +1972,9 @@ async function startServer() {
 
   // 8. Manual or Programmatic Sync Endpoint
   app.post('/api/fund/sync-google-sheet', async (req, res) => {
-    const { url, type } = req.body;
-    const result = await performGoogleSheetSyncInternal(url, type || 'force');
+    const { url, type, students, expenses } = req.body;
+    const directPayload = (Array.isArray(students) || Array.isArray(expenses)) ? { students, expenses } : undefined;
+    const result = await performGoogleSheetSyncInternal(url, type || 'force', directPayload);
     if (!result.success) {
       return res.status(400).json({ error: result.error || result.reason });
     }

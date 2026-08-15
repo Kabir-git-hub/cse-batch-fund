@@ -120,23 +120,59 @@ export default function App() {
     if (isSyncingSheet) return;
     setIsSyncingSheet(true);
     try {
-      const url = config?.googleSheetUrl || config?.googleSheetExpensesUrl || 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0';
+      const webhookUrl = config?.googleSheetWebhookUrl || 'https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec';
+      const sheetUrl = config?.googleSheetUrl || config?.googleSheetPaymentsUrl || 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0';
+
+      let directData: { students?: any[]; expenses?: any[] } | undefined = undefined;
+
+      // Attempt client-side GET request to webhook if available
+      try {
+        if (webhookUrl && webhookUrl.includes('script.google.com')) {
+          const directRes = await fetch(webhookUrl, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+          });
+          if (directRes.ok) {
+            const json = await directRes.json();
+            if (json && (Array.isArray(json.students) || Array.isArray(json.expenses) || (json.data && (Array.isArray(json.data.students) || Array.isArray(json.data.expenses))))) {
+              directData = {
+                students: Array.isArray(json.students) ? json.students : json.data?.students,
+                expenses: Array.isArray(json.expenses) ? json.expenses : json.data?.expenses,
+              };
+            }
+          }
+        }
+      } catch (clientGetErr) {
+        // Direct client fetch might hit CORS; backend handles server-side GET
+        console.log('Client direct GET bypass, switching to server sync handler:', clientGetErr);
+      }
+
       const res = await fetch('/api/fund/sync-google-sheet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, type: 'all' }),
+        body: JSON.stringify({
+          url: webhookUrl || sheetUrl,
+          type: 'all',
+          students: directData?.students,
+          expenses: directData?.expenses,
+        }),
       });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to sync with Google Sheet');
 
+      // Immediately refresh local state / UI
       await fetchFundData();
-      setSyncToast({ message: 'Google Sheet database synced successfully!', type: 'success' });
+      setSyncToast({
+        message: data.message || 'Google Sheet database synced successfully! All test data overwritten.',
+        type: 'success',
+      });
     } catch (err: any) {
       console.error('Sheet Sync error:', err);
-      setSyncToast({ message: err.message || 'Sheet sync failed', type: 'error' });
+      setSyncToast({ message: err.message || 'Sheet sync failed. Please check webhook URL.', type: 'error' });
     } finally {
       setIsSyncingSheet(false);
-      setTimeout(() => setSyncToast(null), 3500);
+      setTimeout(() => setSyncToast(null), 4000);
     }
   };
 
