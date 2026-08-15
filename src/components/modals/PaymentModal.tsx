@@ -39,7 +39,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<'bKash' | 'Nagad' | 'Rocket' | 'Cash' | 'Bank'>('bKash');
   const [transactionRef, setTransactionRef] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [collectorName, setCollectorName] = useState(config?.managerName || 'Md. Rajib Hossain Sunny (CR)');
+  const [collectorName, setCollectorName] = useState('');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -52,7 +52,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setTransactionRef('');
       setNotes('');
       setPaymentDate(new Date().toISOString().split('T')[0]);
-      setCollectorName(config?.managerName || 'Md. Rajib Hossain Sunny (CR)');
+      setCollectorName('');
     }
     prevIsOpen.current = isOpen;
   }, [isOpen, preselectedStudent, students, config]);
@@ -303,6 +303,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               </label>
               <input
                 type="text"
+                placeholder="e.g. Md. Rajib Hossain Sunny (CR)"
                 value={collectorName}
                 onChange={(e) => setCollectorName(e.target.value)}
                 className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"

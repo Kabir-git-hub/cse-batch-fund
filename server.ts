@@ -879,7 +879,7 @@ async function startServer() {
       paymentDate: payment.paymentDate || new Date().toISOString().split('T')[0],
       paymentMethod: payment.paymentMethod || 'bKash',
       transactionRef: payment.transactionRef || 'TRX-' + Math.floor(Math.random() * 100000),
-      collectorName: payment.collectorName || db.config.managerName || 'Md. Rajib Hossain Sunny (CR)',
+      collectorName: typeof payment.collectorName === 'string' ? payment.collectorName.trim() : '',
       notes: payment.notes || '',
       verified: true,
     };
@@ -972,37 +972,53 @@ async function startServer() {
     res.json({ success: true, expense: newExpense, ...details });
   });
 
-  // 6. Delete Expense (Supports both DELETE and POST)
-  const handleDeleteExpenseRoute = (req: any, res: any) => {
-    const { id } = req.params;
+  // 6. Delete Expense (Supports DELETE and POST)
+  const handleDeleteExpenseRoute = async (req: any, res: any) => {
+    const id = req.params?.id || req.body?.id || req.body?.expenseId || req.body?.voucherNo;
     const db = loadDB();
 
     if (!isAuthorizedAdmin(req, db.config)) {
       return res.status(401).json({ error: 'Access Denied: Authorized Admin Gmail or PIN required.' });
     }
 
-    const deletedExpense = db.expenses.find((e) => e.id === id || e.voucherNo === id);
-    if (deletedExpense) {
-      db.expenses = db.expenses.filter((e) => e.id !== deletedExpense.id && e.voucherNo !== deletedExpense.voucherNo);
-      deleteFirestoreDoc('expenses', deletedExpense.id);
+    const targetExpense = db.expenses.find(
+      (e) => e.id === id || e.voucherNo === id || e.id === req.body?.expenseId || e.voucherNo === req.body?.voucherNo
+    );
+
+    if (targetExpense) {
+      db.expenses = db.expenses.filter((e) => e.id !== targetExpense.id && e.voucherNo !== targetExpense.voucherNo);
+      deleteFirestoreDoc('expenses', targetExpense.id);
+      if (targetExpense.voucherNo) {
+        deleteFirestoreDoc('expenses', targetExpense.voucherNo);
+      }
       saveDB(db);
 
       syncToGoogleSheetWebhook('delete_expense', {
-        voucherNo: deletedExpense.voucherNo,
-        title: deletedExpense.title,
-        amount: deletedExpense.amount,
+        type: 'delete_expense',
+        voucherNo: targetExpense.voucherNo,
+        title: targetExpense.title,
+        amount: targetExpense.amount,
       });
     } else {
-      db.expenses = db.expenses.filter((e) => e.id !== id && e.voucherNo !== id);
-      saveDB(db);
+      if (id) {
+        deleteFirestoreDoc('expenses', id);
+        db.expenses = db.expenses.filter((e) => e.id !== id && e.voucherNo !== id);
+        saveDB(db);
+
+        syncToGoogleSheetWebhook('delete_expense', {
+          type: 'delete_expense',
+          voucherNo: id,
+        });
+      }
     }
 
     const details = calculateFundDetails(db);
-    res.json({ success: true, ...details });
+    res.json({ success: true, message: 'Expense deleted successfully', ...details });
   };
 
   app.delete('/api/fund/expenses/:id', handleDeleteExpenseRoute);
   app.post('/api/fund/expenses/:id/delete', handleDeleteExpenseRoute);
+  app.post('/api/fund/expenses/delete', handleDeleteExpenseRoute);
 
   // 7. Update Batch Settings / PIN / Google Sheet Links
   app.post('/api/fund/config', (req, res) => {

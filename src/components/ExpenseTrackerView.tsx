@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Receipt, Plus, Trash2, Tag, FileText, Search } from 'lucide-react';
+import { Receipt, Plus, Tag, FileText, Search } from 'lucide-react';
 import { Expense } from '../types';
 
 interface ExpenseTrackerViewProps {
@@ -7,7 +7,6 @@ interface ExpenseTrackerViewProps {
   isAdmin: boolean;
   onOpenExpenseModal: () => void;
   onSelectExpense: (expense: Expense) => void;
-  onDeleteExpense: (expenseId: string) => void;
 }
 
 export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
@@ -15,7 +14,6 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
   isAdmin,
   onOpenExpenseModal,
   onSelectExpense,
-  onDeleteExpense,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -136,25 +134,11 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
                     <div className="flex items-center justify-end gap-1.5">
                       <button
                         onClick={() => onSelectExpense(e)}
-                        className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                        className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
                         title="View Voucher Proof & Notes"
                       >
                         <FileText className="w-4 h-4" />
                       </button>
-
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={(evt) => {
-                            evt.stopPropagation();
-                            onDeleteExpense(e.id);
-                          }}
-                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                          title="Delete Voucher"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>

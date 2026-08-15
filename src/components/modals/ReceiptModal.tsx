@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Printer, CheckCircle2, ShieldCheck, Download, ExternalLink, Calendar, Phone, CreditCard, Trash2 } from 'lucide-react';
+import { X, Printer, CheckCircle2, ShieldCheck, Download, ExternalLink, Calendar, Phone, CreditCard } from 'lucide-react';
 import { PaymentReceipt, Expense, BatchConfig } from '../../types';
 import { SecLogo } from '../SecLogo';
 
@@ -10,7 +10,6 @@ interface ReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
   isAdmin?: boolean;
-  onDeleteExpense?: (id: string) => void;
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
@@ -20,7 +19,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   isOpen,
   onClose,
   isAdmin,
-  onDeleteExpense,
 }) => {
   if (!isOpen || (!receipt && !expense)) return null;
 
@@ -156,19 +154,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {expense && isAdmin && onDeleteExpense && (
-              <button
-                type="button"
-                onClick={() => {
-                  onDeleteExpense(expense.id);
-                  onClose();
-                }}
-                className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                title="Delete Expense Voucher"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
-            )}
             <button
               type="button"
               onClick={handlePrint}
@@ -279,7 +264,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 </div>
                 <div className="text-right">
                   <span className="text-[11px] text-slate-400 block">Collector / CR:</span>
-                  <span className="font-bold text-slate-900">{receipt.collectorName}</span>
+                  <span className="font-bold text-slate-900">{receipt.collectorName || '—'}</span>
                 </div>
               </div>
             </div>

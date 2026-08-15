@@ -15,17 +15,31 @@ import { AdminPinModal } from './components/modals/AdminPinModal';
 import { GoogleSheetSyncModal } from './components/modals/GoogleSheetSyncModal';
 
 import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './types';
+import { initialConfig } from './data/defaultData';
 import { PRIMARY_ADMIN_EMAIL } from './config/adminConfig';
 import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw } from 'lucide-react';
 import { SecLogo } from './components/SecLogo';
 
+const defaultStats: FundStats = {
+  totalCollected: 0,
+  totalSpent: 0,
+  netBalance: 0,
+  totalStudents: 0,
+  paidUpStudentsCount: 0,
+  overdueStudentsCount: 0,
+  collectionRate: 0,
+  currentMonth: new Date().toISOString().slice(0, 7),
+  thisMonthCollected: 0,
+  thisMonthSpent: 0,
+};
+
 export default function App() {
-  const [config, setConfig] = useState<BatchConfig | null>(null);
+  const [config, setConfig] = useState<BatchConfig>(initialConfig);
   const [students, setStudents] = useState<Student[]>([]);
   const [receipts, setReceipts] = useState<PaymentReceipt[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [studentStatuses, setStudentStatuses] = useState<StudentFundStatus[]>([]);
-  const [stats, setStats] = useState<FundStats | null>(null);
+  const [stats, setStats] = useState<FundStats>(defaultStats);
   const [allTargetMonths, setAllTargetMonths] = useState<string[]>([]);
   
   const [loading, setLoading] = useState<boolean>(true);
@@ -126,29 +140,33 @@ export default function App() {
     }
   };
 
-  // Load Data from Server API
+  // Load Data from Server API with resilient exponential backoff
   const fetchFundData = async (retryCount = 0) => {
     try {
       const res = await fetch('/api/fund/data');
-      if (!res.ok) throw new Error('Failed to fetch fund data');
+      if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch fund data`);
       const data = await res.json();
 
-      setConfig(data.config);
-      setStudents(data.students);
-      setReceipts(data.receipts);
-      setExpenses(data.expenses);
-      setStudentStatuses(data.studentStatuses);
-      setStats(data.stats);
-      setAllTargetMonths(data.allTargetMonths);
-      setError(null);
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Failed to fetch fund data');
-      if (retryCount < 3) {
-        setTimeout(() => fetchFundData(retryCount + 1), 1500);
+      if (data) {
+        if (data.config) setConfig(data.config);
+        if (data.students) setStudents(data.students);
+        if (data.receipts) setReceipts(data.receipts);
+        if (data.expenses) setExpenses(data.expenses);
+        if (data.studentStatuses) setStudentStatuses(data.studentStatuses);
+        if (data.stats) setStats(data.stats);
+        if (data.allTargetMonths) setAllTargetMonths(data.allTargetMonths);
+        setError(null);
       }
-    } finally {
       setLoading(false);
+    } catch (err: any) {
+      console.warn('fetchFundData error (attempt ' + retryCount + '):', err);
+      if (retryCount < 5) {
+        const delay = Math.min(1000 * Math.pow(1.5, retryCount), 4000);
+        setTimeout(() => fetchFundData(retryCount + 1), delay);
+      } else {
+        setError(err.message || 'Failed to fetch fund data');
+        setLoading(false);
+      }
     }
   };
 
@@ -156,16 +174,20 @@ export default function App() {
     fetchFundData();
     const interval = setInterval(() => {
       fetch('/api/fund/data')
-        .then((res) => res.json())
+        .then((res) => {
+          if (!res.ok) throw new Error('Poll failed');
+          return res.json();
+        })
         .then((data) => {
           if (data && data.config) {
             setConfig(data.config);
-            setStudents(data.students);
-            setReceipts(data.receipts);
-            setExpenses(data.expenses);
-            setStudentStatuses(data.studentStatuses);
-            setStats(data.stats);
-            setAllTargetMonths(data.allTargetMonths);
+            setStudents(data.students || []);
+            setReceipts(data.receipts || []);
+            setExpenses(data.expenses || []);
+            setStudentStatuses(data.studentStatuses || []);
+            setStats(data.stats || defaultStats);
+            setAllTargetMonths(data.allTargetMonths || []);
+            setError(null);
           }
         })
         .catch(() => {});
@@ -220,46 +242,6 @@ export default function App() {
       await fetchFundData();
     } catch (err: any) {
       alert('Error: ' + err.message);
-    }
-  };
-
-  // Delete Expense
-  const handleDeleteExpense = async (expenseId: string) => {
-    if (!confirm('Are you sure you want to delete this expense voucher?')) return;
-    try {
-      // Optimistically remove from state so UI updates instantly
-      setExpenses((prev) => prev.filter((e) => e.id !== expenseId && e.voucherNo !== expenseId));
-
-      const queryParams = new URLSearchParams({
-        pin: adminPinInput || '1717',
-        adminEmail: adminEmail || PRIMARY_ADMIN_EMAIL,
-      }).toString();
-
-      const res = await fetch(`/api/fund/expenses/${expenseId}?${queryParams}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: adminPinInput, adminEmail }),
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      let data: any = {};
-      if (contentType.includes('application/json')) {
-        data = await res.json();
-      }
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to delete expense');
-      }
-
-      if (selectedExpense && (selectedExpense.id === expenseId || selectedExpense.voucherNo === expenseId)) {
-        setSelectedExpense(null);
-        setIsReceiptModalOpen(false);
-      }
-
-      await fetchFundData();
-    } catch (err: any) {
-      alert('Error deleting expense: ' + err.message);
-      await fetchFundData(); // Restore state if failed
     }
   };
 
@@ -330,7 +312,7 @@ export default function App() {
     await fetchFundData();
   };
 
-  if ((loading && (!config || !stats)) || (!config || !stats)) {
+  if (loading && students.length === 0 && receipts.length === 0) {
     return (
       <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-4">
         {error ? (
@@ -338,7 +320,7 @@ export default function App() {
             <div className="w-12 h-12 bg-red-500/10 text-red-400 rounded-full flex items-center justify-center mx-auto mb-3">
               <AlertCircle className="w-6 h-6" />
             </div>
-            <h2 className="text-lg font-bold text-slate-100">Connection Error</h2>
+            <h2 className="text-lg font-bold text-slate-100">Connecting to SEC CSE-17 Fund...</h2>
             <p className="text-sm text-slate-400 mt-1 mb-4">{error}</p>
             <button
               onClick={() => {
@@ -465,7 +447,6 @@ export default function App() {
               setSelectedReceipt(null);
               setIsReceiptModalOpen(true);
             }}
-            onDeleteExpense={handleDeleteExpense}
           />
         )}
 
@@ -526,7 +507,6 @@ export default function App() {
         isOpen={isReceiptModalOpen}
         onClose={() => setIsReceiptModalOpen(false)}
         isAdmin={isAdmin}
-        onDeleteExpense={handleDeleteExpense}
       />
 
       <AdminPinModal

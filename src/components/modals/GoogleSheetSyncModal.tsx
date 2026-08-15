@@ -211,12 +211,12 @@ function doPost(e) {
         sheet2.appendRow(['VoucherNo', 'Title', 'Category', 'Amount', 'Date', 'SpentBy', 'Notes']);
       }
       sheet2.appendRow([data.voucherNo, data.title, data.category, data.amount, data.date, data.spentBy, data.notes]);
-    } else if (data.action === 'delete_expense') {
+    } else if (data.action === 'delete_expense' || data.type === 'delete_expense') {
       var sheet2 = ss.getSheetByName('Sheet2') || ss.getSheets()[1];
       if (sheet2) {
         var values = sheet2.getDataRange().getValues();
         for (var i = 1; i < values.length; i++) {
-          if (String(values[i][0]) === String(data.voucherNo) || String(values[i][1]).toLowerCase() === String(data.title).toLowerCase()) {
+          if (String(values[i][0]) === String(data.voucherNo) || (data.title && String(values[i][1]).toLowerCase() === String(data.title).toLowerCase())) {
             sheet2.deleteRow(i + 1);
             break;
           }

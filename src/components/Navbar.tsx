@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { BatchConfig, FundStats } from '../types';
 import { PRIMARY_ADMIN_EMAIL } from '../config/adminConfig';
-import { SecLogo } from './SecLogo';
 
 interface NavbarProps {
   config: BatchConfig;
@@ -73,15 +72,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           
           {/* Brand & Institution Info */}
           <div className="flex items-center gap-3 shrink-0">
-            <div className="bg-slate-50 p-1 rounded-full border border-slate-200/80 shadow-xs shrink-0 flex items-center justify-center overflow-hidden">
-              <SecLogo className="w-9 h-9 sm:w-10 sm:h-10" />
-            </div>
+            <img
+              src="https://i.postimg.cc/htGh5FFC/540271483-122132074802921166-1834135919526935801-n.jpg"
+              alt="অসীমতট Logo"
+              referrerPolicy="no-referrer"
+              className="w-12 h-12 md:w-14 md:h-14 rounded-full object-cover shadow-sm border border-gray-200 shrink-0"
+            />
             <div>
-              <h1 className="text-base sm:text-lg font-black tracking-tight uppercase text-slate-900 leading-tight">
-                {config.batchName || 'SEC CSE Batch-17'} Fund
+              <h1 className="text-base sm:text-lg font-black tracking-tight text-slate-900 leading-tight">
+                অসীমতট (CSE-17 Batch Fund)
               </h1>
               <p className="text-[10px] sm:text-[11px] text-slate-500 font-semibold tracking-wider uppercase leading-none mt-0.5">
-                {config.institution || 'Sylhet Engineering College'}
+                {config.institution || 'SYLHET ENGINEERING COLLEGE'}
               </p>
             </div>
           </div>
