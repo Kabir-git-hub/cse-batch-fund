@@ -275,8 +275,33 @@ export default function App() {
       if (!res.ok) throw new Error(data.error || 'Failed to save student');
 
       await fetchFundData();
+      setSyncToast({ message: `Student ${studentData.name} saved successfully!`, type: 'success' });
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      alert('Error saving student: ' + err.message);
+    }
+  };
+
+  // Delete Student
+  const handleDeleteStudent = async (student: Student) => {
+    try {
+      const res = await fetch(`/api/fund/students/${encodeURIComponent(student.id || student.roll)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pin: adminPinInput,
+          adminEmail,
+          studentRoll: student.roll,
+          studentId: student.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete student');
+
+      await fetchFundData();
+      setSyncToast({ message: `Student ${student.name} (${student.roll}) deleted successfully!`, type: 'success' });
+    } catch (err: any) {
+      alert('Error deleting student: ' + err.message);
+      await fetchFundData();
     }
   };
 
@@ -419,6 +444,7 @@ export default function App() {
               setIsPaymentModalOpen(true);
             }}
             onOpenAddStudentModal={() => setIsStudentModalOpen(true)}
+            onDeleteStudent={handleDeleteStudent}
           />
         )}
 
@@ -487,6 +513,7 @@ export default function App() {
       />
 
       <StudentModal
+        config={config}
         isOpen={isStudentModalOpen}
         onClose={() => setIsStudentModalOpen(false)}
         onSubmit={handleAddStudent}

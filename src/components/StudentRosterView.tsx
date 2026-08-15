@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, CheckCircle2, AlertTriangle, AlertCircle, UserPlus } from 'lucide-react';
+import { Search, CheckCircle2, AlertTriangle, AlertCircle, UserPlus, Trash2, X } from 'lucide-react';
 import { StudentFundStatus, Student } from '../types';
 
 interface StudentRosterViewProps {
@@ -8,6 +8,7 @@ interface StudentRosterViewProps {
   onSelectStudent: (status: StudentFundStatus) => void;
   onOpenPaymentModalForStudent: (student: Student) => void;
   onOpenAddStudentModal: () => void;
+  onDeleteStudent?: (student: Student) => void;
 }
 
 export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
@@ -16,9 +17,12 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
   onSelectStudent,
   onOpenPaymentModalForStudent,
   onOpenAddStudentModal,
+  onDeleteStudent,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const filteredStudents = studentStatuses.filter((item) => {
     const matchesSearch =
@@ -32,6 +36,19 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
 
     return matchesSearch;
   });
+
+  const handleConfirmDelete = async () => {
+    if (!studentToDelete || !onDeleteStudent) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteStudent(studentToDelete);
+      setStudentToDelete(null);
+    } catch (err) {
+      console.error('Delete error:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -116,6 +133,7 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
                 <th className="py-3.5 px-4 sm:px-6">Student Name</th>
                 <th className="py-3.5 px-4 sm:px-6">Total Paid</th>
                 <th className="py-3.5 px-4 sm:px-6">Dues Status</th>
+                {isAdmin && <th className="py-3.5 px-4 sm:px-6 text-right">Action</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -167,12 +185,28 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
                       </span>
                     )}
                   </td>
+
+                  {isAdmin && (
+                    <td className="py-3.5 px-4 sm:px-6 text-right" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setStudentToDelete(item.student);
+                        }}
+                        title={`Delete student ${item.student.name}`}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center border border-transparent hover:border-rose-200"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
 
               {filteredStudents.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-12 text-center text-slate-400 text-sm font-medium">
+                  <td colSpan={isAdmin ? 5 : 4} className="py-12 text-center text-slate-400 text-sm font-medium">
                     No students match your search criteria.
                   </td>
                 </tr>
@@ -181,6 +215,56 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {studentToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5 text-rose-600">
+                <div className="p-2 bg-rose-50 rounded-xl border border-rose-100">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-base">Delete Student</h3>
+              </div>
+              <button
+                onClick={() => setStudentToDelete(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to permanently delete <strong className="text-slate-900">{studentToDelete.name}</strong> (Roll: <span className="font-mono font-bold text-slate-900">{studentToDelete.roll}</span>)?
+            </p>
+
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80 text-[11px] text-amber-800">
+              ⚠️ This will remove the student from Firestore and send a deletion sync event to the Google Sheet.
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setStudentToDelete(null)}
+                disabled={isDeleting}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

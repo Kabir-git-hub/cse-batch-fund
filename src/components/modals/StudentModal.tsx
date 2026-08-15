@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { X, UserPlus, Save } from 'lucide-react';
-import { Student } from '../../types';
+import { Student, BatchConfig } from '../../types';
 
 interface StudentModalProps {
   existingStudent?: Student | null;
+  config?: BatchConfig | null;
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (studentData: any) => Promise<void>;
@@ -11,6 +12,7 @@ interface StudentModalProps {
 
 export const StudentModal: React.FC<StudentModalProps> = ({
   existingStudent,
+  config,
   isOpen,
   onClose,
   onSubmit,
@@ -37,17 +39,17 @@ export const StudentModal: React.FC<StudentModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!roll || !name) return;
+    if (!roll.trim() || !name.trim()) return;
 
     setIsSubmitting(true);
     try {
       await onSubmit({
         id: existingStudent?.id,
-        roll,
-        name,
-        phone,
+        roll: roll.trim(),
+        name: name.trim(),
+        phone: phone.trim(),
         status,
-        joinedMonth: existingStudent?.joinedMonth || '2025-01',
+        joinedMonth: existingStudent?.joinedMonth || config?.startMonth || '2026-08',
       });
       onClose();
     } catch (err) {

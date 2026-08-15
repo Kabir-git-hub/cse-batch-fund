@@ -222,6 +222,40 @@ function doPost(e) {
           }
         }
       }
+    } else if (data.type === 'add_student' || data.action === 'add_student') {
+      var sheet = ss.getSheetByName('Sheet1') || ss.getSheets()[0];
+      var values = sheet.getDataRange().getValues();
+      var headers = values[0].map(function(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); });
+      var rollCol = headers.findIndex(function(h) { return h.indexOf('roll') >= 0 || h.indexOf('id') >= 0; });
+      if (rollCol < 0) rollCol = 0;
+      
+      var targetRoll = String(data.studentRoll || '').trim();
+      var foundIndex = -1;
+      for (var i = 1; i < values.length; i++) {
+        var rowRoll = String(values[i][rollCol]).replace(/\\.0+$/, '').replace(/[^0-9a-zA-Z]/g, '');
+        if (rowRoll === targetRoll) {
+          foundIndex = i;
+          break;
+        }
+      }
+      if (foundIndex < 0) {
+        sheet.appendRow([data.studentRoll, data.name || '', data.phone || '', 0, 'Active']);
+      }
+    } else if (data.type === 'delete_student' || data.action === 'delete_student') {
+      var sheet = ss.getSheetByName('Sheet1') || ss.getSheets()[0];
+      var values = sheet.getDataRange().getValues();
+      var headers = values[0].map(function(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); });
+      var rollCol = headers.findIndex(function(h) { return h.indexOf('roll') >= 0 || h.indexOf('id') >= 0; });
+      if (rollCol < 0) rollCol = 0;
+      
+      var targetRoll = String(data.studentRoll || '').trim();
+      for (var i = 1; i < values.length; i++) {
+        var rowRoll = String(values[i][rollCol]).replace(/\\.0+$/, '').replace(/[^0-9a-zA-Z]/g, '');
+        if (rowRoll === targetRoll) {
+          sheet.deleteRow(i + 1);
+          break;
+        }
+      }
     }
     return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {

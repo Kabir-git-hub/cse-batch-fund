@@ -41,6 +41,20 @@ let isFirestoreQuotaExceeded = false;
 
 // Async function to load or seed Firebase Firestore
 async function loadDBAsync(): Promise<DBStructure> {
+  // First load from local DB_FILE if available for fast boot
+  let localDbFromFile: DBStructure | null = null;
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const fileData = fs.readFileSync(DB_FILE, 'utf-8');
+      localDbFromFile = JSON.parse(fileData);
+      if (localDbFromFile && Array.isArray(localDbFromFile.students)) {
+        cachedDb = localDbFromFile;
+      }
+    }
+  } catch (e) {
+    console.error('Error reading local db.json:', e);
+  }
+
   if (isFirestoreQuotaExceeded) {
     if (cachedDb) return cachedDb;
   }
@@ -50,13 +64,23 @@ async function loadDBAsync(): Promise<DBStructure> {
     const receiptsSnap = await getDocs(collection(firestoreDb, 'receipts'));
     const expensesSnap = await getDocs(collection(firestoreDb, 'expenses'));
 
-    let config: BatchConfig = configSnap.exists() ? (configSnap.data() as BatchConfig) : { ...initialConfig };
+    let config: BatchConfig = configSnap.exists() ? (configSnap.data() as BatchConfig) : (localDbFromFile?.config || { ...initialConfig });
     let students: Student[] = studentsSnap.docs.map((d) => d.data() as Student);
     let receipts: PaymentReceipt[] = receiptsSnap.docs.map((d) => d.data() as PaymentReceipt);
     let expenses: Expense[] = expensesSnap.docs.map((d) => d.data() as Expense);
 
-    // If Firestore is empty, seed initial data from defaultData
-    if (!configSnap.exists() || students.length === 0) {
+    // Merge any student from localDbFromFile that might not be in Firestore yet
+    if (localDbFromFile && Array.isArray(localDbFromFile.students)) {
+      for (const s of localDbFromFile.students) {
+        if (!students.some((existing) => existing.id === s.id || existing.roll === s.roll)) {
+          students.push(s);
+          saveFirestoreDoc('students', s.id, s);
+        }
+      }
+    }
+
+    // If both Firestore and localDb were completely empty, seed initial data from defaultData
+    if (!configSnap.exists() && students.length === 0) {
       console.log('Seeding initial database to Firebase Firestore...');
       config = { ...initialConfig };
       students = [...initialStudents];
@@ -65,18 +89,11 @@ async function loadDBAsync(): Promise<DBStructure> {
 
       const seedDb: DBStructure = { config, students, receipts, expenses };
       await syncAllToFirestore(seedDb);
+    } else if (students.length === 0) {
+      students = [...initialStudents];
     }
 
     let dirty = false;
-
-    // Auto-upgrade if DB contains old sample students
-    if (!students || students.length < 50 || students[0]?.roll?.startsWith('210')) {
-      console.log('Upgrading database with official SEC CSE students...');
-      students = [...initialStudents];
-      receipts = [...initialReceipts];
-      expenses = [...initialExpenses];
-      dirty = true;
-    }
 
     if (!config.startMonth || config.startMonth === '2025-01') {
       config.startMonth = '2026-08';
@@ -115,6 +132,14 @@ async function loadDBAsync(): Promise<DBStructure> {
     if (!config.allowedAdminEmails) {
       config.allowedAdminEmails = [...INITIAL_ALLOWED_ADMIN_EMAILS];
       dirty = true;
+    } else {
+      for (const email of INITIAL_ALLOWED_ADMIN_EMAILS) {
+        if (!config.allowedAdminEmails.some((e) => e.trim().toLowerCase() === email.trim().toLowerCase())) {
+          config.allowedAdminEmails.push(email);
+          dirty = true;
+        }
+      }
+      config.allowedAdminEmails = config.allowedAdminEmails.map((e) => e.trim()).filter(Boolean);
     }
 
     if (config.deletedExpenseVouchers && config.deletedExpenseVouchers.length > 0) {
@@ -209,9 +234,21 @@ async function syncAllToFirestore(db: DBStructure) {
   }
 }
 
-// Synchronous getter for in-memory DB state
+// Synchronous getter for in-memory DB state with local file fallback
 function loadDB(): DBStructure {
   if (cachedDb) return cachedDb;
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const fileData = fs.readFileSync(DB_FILE, 'utf-8');
+      const parsed = JSON.parse(fileData);
+      if (parsed && Array.isArray(parsed.students)) {
+        cachedDb = parsed;
+        return parsed;
+      }
+    }
+  } catch (e) {
+    // Ignore and fallback
+  }
   return {
     config: { ...initialConfig },
     students: [...initialStudents],
@@ -241,6 +278,21 @@ function saveDB(db: DBStructure) {
   } catch (err) {
     // Read-only filesystem on Vercel, ignore file write error
   }
+}
+
+// Helper to save document directly to Firestore
+function saveFirestoreDoc(collectionName: string, docId: string, data: any) {
+  if (!docId || isFirestoreQuotaExceeded) return;
+  setDoc(doc(firestoreDb, collectionName, docId), data, { merge: true }).catch((err: any) => {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('Quota exceeded') || err?.code === 8) {
+      isFirestoreQuotaExceeded = true;
+      console.warn(`⚠️ Firestore Quota Exceeded saving doc ${docId} in ${collectionName}`);
+    } else if (err?.code === 'permission-denied' || err?.message?.includes('PERMISSION_DENIED')) {
+      console.warn(`⚠️ Firestore Permission Denied saving doc ${docId} in ${collectionName}`);
+    } else {
+      console.error(`Error saving doc ${docId} to Firestore collection ${collectionName}:`, err);
+    }
+  });
 }
 
 // Helper to delete document directly from Firestore
@@ -665,7 +717,7 @@ async function startServer() {
   });
 
   // 2. Add / Edit Student (Manager mode)
-  app.post('/api/fund/students', (req, res) => {
+  app.post('/api/fund/students', async (req, res) => {
     const { student } = req.body;
     const db = loadDB();
 
@@ -677,25 +729,108 @@ async function startServer() {
       return res.status(400).json({ error: 'Roll and Name are required' });
     }
 
-    const existingIdx = db.students.findIndex((s) => s.id === student.id || s.roll === student.roll);
+    const cleanRoll = String(student.roll).trim();
+    const cleanName = String(student.name).trim();
+    const cleanPhone = student.phone ? String(student.phone).trim() : '';
+
+    const existingIdx = db.students.findIndex((s) => s.id === student.id || s.roll === cleanRoll);
+    let savedStudent: Student;
+
     if (existingIdx >= 0) {
-      db.students[existingIdx] = { ...db.students[existingIdx], ...student };
+      db.students[existingIdx] = {
+        ...db.students[existingIdx],
+        ...student,
+        roll: cleanRoll,
+        name: cleanName,
+        phone: cleanPhone,
+      };
+      savedStudent = db.students[existingIdx];
     } else {
       const newStudent: Student = {
-        id: 's_' + Date.now(),
-        roll: student.roll,
-        name: student.name,
-        phone: student.phone || '',
+        id: student.id || 's_' + Date.now(),
+        roll: cleanRoll,
+        name: cleanName,
+        phone: cleanPhone,
         status: student.status || 'active',
-        joinedMonth: student.joinedMonth || db.config.startMonth || '2025-01',
+        joinedMonth: student.joinedMonth || db.config.startMonth || '2026-08',
       };
       db.students.push(newStudent);
+      savedStudent = newStudent;
     }
 
+    // Persist immediately in memory, local file, and Firestore
     saveDB(db);
+    saveFirestoreDoc('students', savedStudent.id, savedStudent);
+
+    // Google Sheet Webhook Sync (Add Student)
+    syncToGoogleSheetWebhook('add_student', {
+      type: 'add_student',
+      studentRoll: savedStudent.roll,
+      name: savedStudent.name,
+      phone: savedStudent.phone,
+    });
+
     const details = calculateFundDetails(db);
-    res.json({ success: true, ...details });
+    res.json({ success: true, student: savedStudent, ...details });
   });
+
+  // 2b. Delete Student (Manager mode)
+  const handleDeleteStudentRoute = async (req: any, res: any) => {
+    const id = req.params?.id || req.body?.studentId || req.body?.studentRoll;
+    const db = loadDB();
+
+    if (!isAuthorizedAdmin(req.body, db.config)) {
+      return res.status(401).json({ error: 'Access Denied: Authorized Admin required.' });
+    }
+
+    const targetStudent = db.students.find(
+      (s) => s.id === id || s.roll === id || s.roll === req.body?.studentRoll || s.id === req.body?.studentId
+    );
+
+    if (!targetStudent) {
+      return res.status(404).json({ error: 'Student not found in database.' });
+    }
+
+    // Remove from in-memory student array
+    db.students = db.students.filter((s) => s.id !== targetStudent.id && s.roll !== targetStudent.roll);
+
+    // Permanently remove from Firestore
+    deleteFirestoreDoc('students', targetStudent.id);
+    if (targetStudent.roll) {
+      deleteFirestoreDoc('students', targetStudent.roll);
+    }
+
+    // Clean up any receipts for this deleted student from state and Firestore
+    const studentReceipts = db.receipts.filter(
+      (r) => r.studentId === targetStudent.id || r.studentRoll === targetStudent.roll
+    );
+    for (const r of studentReceipts) {
+      deleteFirestoreDoc('receipts', r.id);
+    }
+    db.receipts = db.receipts.filter(
+      (r) => r.studentId !== targetStudent.id && r.studentRoll !== targetStudent.roll
+    );
+
+    // Save updated DB state
+    saveDB(db);
+
+    // Google Sheet Webhook Sync (Delete Student)
+    syncToGoogleSheetWebhook('delete_student', {
+      type: 'delete_student',
+      studentRoll: targetStudent.roll,
+    });
+
+    const details = calculateFundDetails(db);
+    res.json({
+      success: true,
+      message: `Student ${targetStudent.name} (${targetStudent.roll}) deleted successfully!`,
+      ...details,
+    });
+  };
+
+  app.delete('/api/fund/students/:id', handleDeleteStudentRoute);
+  app.post('/api/fund/students/:id/delete', handleDeleteStudentRoute);
+  app.post('/api/fund/students/delete', handleDeleteStudentRoute);
 
   // 3. Add Payment Receipt (Manager mode)
   app.post('/api/fund/payments', (req, res) => {
@@ -879,11 +1014,17 @@ async function startServer() {
   });
 
   // Helper to push updates outwards to Google Apps Script Webhook
-  async function syncToGoogleSheetWebhook(action: 'payment' | 'expense' | 'delete_payment' | 'delete_expense' | 'push_all' | 'test', payload: any) {
+  async function syncToGoogleSheetWebhook(action: string, payload: any) {
     try {
       const db = loadDB();
       const webhookUrl = db.config.googleSheetWebhookUrl || (db.config.googleSheetPaymentsUrl && db.config.googleSheetPaymentsUrl.includes('script.google.com') ? db.config.googleSheetPaymentsUrl : '');
       if (!webhookUrl) return { success: false, reason: 'No Webhook URL configured' };
+
+      const bodyData = {
+        action,
+        type: payload?.type || action,
+        ...payload,
+      };
 
       console.log(`[GoogleSheet Push] Sending ${action} to Google Apps Script Webhook (${webhookUrl})...`);
       const response = await fetch(webhookUrl, {
@@ -891,7 +1032,7 @@ async function startServer() {
         headers: {
           'Content-Type': 'text/plain;charset=utf-8',
         },
-        body: JSON.stringify({ action, ...payload }),
+        body: JSON.stringify(bodyData),
         redirect: 'follow',
       });
       const resText = await response.text();
