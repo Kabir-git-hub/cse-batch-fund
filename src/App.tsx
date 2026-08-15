@@ -5,7 +5,7 @@ import { DashboardView } from './components/DashboardView';
 import { StudentRosterView } from './components/StudentRosterView';
 import { MonthMatrixView } from './components/MonthMatrixView';
 import { ExpenseTrackerView } from './components/ExpenseTrackerView';
-import { AiAssistantView } from './components/AiAssistantView';
+import { FloatingAiAuditor } from './components/FloatingAiAuditor';
 
 import { PaymentModal } from './components/modals/PaymentModal';
 import { ExpenseModal } from './components/modals/ExpenseModal';
@@ -16,7 +16,7 @@ import { GoogleSheetSyncModal } from './components/modals/GoogleSheetSyncModal';
 
 import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './types';
 import { PRIMARY_ADMIN_EMAIL } from './config/adminConfig';
-import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw } from 'lucide-react';
+import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw, Clock } from 'lucide-react';
 import { SecLogo } from './components/SecLogo';
 
 export default function App() {
@@ -30,6 +30,19 @@ export default function App() {
   
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [liveDateStr, setLiveDateStr] = useState<string>('');
+  const [liveTimeStr, setLiveTimeStr] = useState<string>('');
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setLiveDateStr(now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }));
+      setLiveTimeStr(now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Tab State
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -344,16 +357,18 @@ export default function App() {
         onOpenSheetSyncModal={() => setIsSheetSyncModalOpen(true)}
         onQuickSheetSync={handleQuickSheetSync}
         isSyncingSheet={isSyncingSheet}
+        liveDateStr={liveDateStr}
+        liveTimeStr={liveTimeStr}
       />
 
       {syncToast && (
-        <div className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl text-white font-bold text-xs shadow-2xl flex items-center gap-2 transition-all ${syncToast.type === 'success' ? 'bg-emerald-600 border border-emerald-400/30' : 'bg-rose-600 border border-rose-400/30'}`}>
+        <div className={`fixed bottom-20 right-5 sm:bottom-24 sm:right-6 z-50 px-4 py-3 rounded-xl text-white font-bold text-xs shadow-2xl flex items-center gap-2 transition-all ${syncToast.type === 'success' ? 'bg-emerald-600 border border-emerald-400/30' : 'bg-rose-600 border border-rose-400/30'}`}>
           <span>{syncToast.message}</span>
         </div>
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 sm:pb-28">
         
         {/* Tab Views */}
         {activeTab === 'dashboard' && (
@@ -428,24 +443,25 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'ai' && <AiAssistantView />}
-
       </main>
 
-      {/* Footer */}
+      {/* Global Floating AI Auditor Chatbot (FAB) */}
+      <FloatingAiAuditor />
+
+      {/* Footer with right padding clearance for the FAB */}
       <footer className="bg-white text-slate-600 border-t border-slate-200/80 py-6 text-xs mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pr-20 sm:pr-24 lg:pr-28 flex flex-col sm:flex-row items-center sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5 min-w-0">
             <div className="bg-slate-50 p-1 rounded-full shrink-0 flex items-center justify-center overflow-hidden border border-slate-200/80 shadow-2xs">
               <SecLogo className="w-7 h-7" />
             </div>
-            <div className="flex flex-col">
-              <strong className="text-slate-900 font-bold">Sylhet Engineering College</strong>
-              <span className="text-slate-500 font-medium">Department of Computer Science & Engineering.</span>
+            <div className="flex flex-col min-w-0">
+              <strong className="text-slate-900 font-bold break-words">Sylhet Engineering College</strong>
+              <span className="text-slate-500 font-medium break-words whitespace-normal">Department of Computer Science & Engineering.</span>
             </div>
           </div>
 
-          <div className="text-slate-500 text-center sm:text-right font-medium">
+          <div className="text-slate-500 text-center sm:text-right font-medium min-w-0 break-words whitespace-normal">
             <span>Developed by: <strong className="text-slate-800">Al Amin Kabir (CSE-17)</strong></span>
           </div>
         </div>

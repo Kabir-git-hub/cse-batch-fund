@@ -39,7 +39,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<'bKash' | 'Nagad' | 'Rocket' | 'Cash' | 'Bank'>('bKash');
   const [transactionRef, setTransactionRef] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [collectorName, setCollectorName] = useState(config?.managerName || 'Md. Ahosan Habib');
+  const [collectorName, setCollectorName] = useState(config?.managerName || 'Md. Rajib Hossain Sunny (CR)');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -52,7 +52,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setTransactionRef('');
       setNotes('');
       setPaymentDate(new Date().toISOString().split('T')[0]);
-      setCollectorName(config?.managerName || 'Md. Ahosan Habib');
+      setCollectorName(config?.managerName || 'Md. Rajib Hossain Sunny (CR)');
     }
     prevIsOpen.current = isOpen;
   }, [isOpen, preselectedStudent, students, config]);
@@ -299,7 +299,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Received By (Collector)
+                Received By (CR)
               </label>
               <input
                 type="text"

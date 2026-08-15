@@ -83,8 +83,8 @@ async function loadDBAsync(): Promise<DBStructure> {
       dirty = true;
     }
 
-    if (!config.managerName || config.managerName.includes('MAHFUJUR') || config.bkashNumber !== '01790853898') {
-      config.managerName = 'Md. Ahosan Habib (Batch Treasurer)';
+    if (!config.managerName || config.managerName.includes('MAHFUJUR') || config.managerName.includes('Ahosan') || config.bkashNumber !== '01790853898') {
+      config.managerName = 'Md. Rajib Hossain Sunny (CR)';
       config.bkashNumber = '01790853898';
       config.nagadNumber = '01790853898';
       dirty = true;
@@ -737,7 +737,7 @@ async function startServer() {
       paymentDate: payment.paymentDate || new Date().toISOString().split('T')[0],
       paymentMethod: payment.paymentMethod || 'bKash',
       transactionRef: payment.transactionRef || 'TRX-' + Math.floor(Math.random() * 100000),
-      collectorName: payment.collectorName || db.config.managerName || 'Mahfuzur Rahman',
+      collectorName: payment.collectorName || db.config.managerName || 'Md. Rajib Hossain Sunny (CR)',
       notes: payment.notes || '',
       verified: true,
     };
@@ -1631,7 +1631,7 @@ Here is the current real-time financial database of Batch-17:
 BATCH CONFIGURATION:
 - Batch: ${db.config.batchName} (${db.config.institution})
 - Monthly Fee: ৳${db.config.monthlyFee} per student
-- Fund Manager / Treasurer: ${db.config.managerName}
+- Class Representative (CR) / Fund In-Charge: ${db.config.managerName}
 - Contact / bKash: ${db.config.bkashNumber}
 - Total Students Enrolled: ${db.students.length}
 

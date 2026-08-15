@@ -278,7 +278,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Payment Verified
                 </div>
                 <div className="text-right">
-                  <span className="text-[11px] text-slate-400 block">Collector / Treasurer:</span>
+                  <span className="text-[11px] text-slate-400 block">Collector / CR:</span>
                   <span className="font-bold text-slate-900">{receipt.collectorName}</span>
                 </div>
               </div>
@@ -310,7 +310,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                     <span className="font-bold text-rose-700">{expense.category}</span>
                   </div>
                   <div className="text-right">
-                    <span className="text-slate-500 block">AUTHORIZED SPENT BY:</span>
+                    <span className="text-slate-500 block">AUTHORIZED SPENT BY (CR):</span>
                     <span className="font-bold text-slate-900">{expense.spentBy}</span>
                   </div>
                 </div>

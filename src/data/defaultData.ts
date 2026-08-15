@@ -6,7 +6,7 @@ export const initialConfig: BatchConfig = {
   institution: 'Sylhet Engineering College',
   monthlyFee: 50,
   startMonth: '2026-08',
-  managerName: 'Md.Ahosan Habib (Batch Treasurer)',
+  managerName: 'Md. Rajib Hossain Sunny (CR)',
   contactPhone: '01790853898',
   bkashNumber: '01790853898',
   nagadNumber: '01790853898',
@@ -22,7 +22,7 @@ export const initialConfig: BatchConfig = {
 export const initialStudents: Student[] = [
   { id: 's1', roll: '2023331501', name: 'LUTFA BEGUM', phone: '01700000501', status: 'active', joinedMonth: '2025-01' },
   { id: 's2', roll: '2023331502', name: 'Rajon Chowdhury', phone: '01700000502', status: 'active', joinedMonth: '2025-01' },
- 
+  { id: 's3', roll: '2023331503', name: 'Fazlul Haque Raza Chowdhury', phone: '01700000503', status: 'active', joinedMonth: '2025-01' },
   { id: 's4', roll: '2023331504', name: 'Azwad Hussain Shadman', phone: '01700000504', status: 'active', joinedMonth: '2025-01' },
   { id: 's5', roll: '2023331505', name: 'Ananya Chakraborty', phone: '01700000505', status: 'active', joinedMonth: '2025-01' },
   { id: 's6', roll: '2023331506', name: 'OVI DEB', phone: '01700000506', status: 'active', joinedMonth: '2025-01' },

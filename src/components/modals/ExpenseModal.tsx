@@ -19,7 +19,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<'Event' | 'Academic' | 'Sports' | 'Lab' | 'Welfare' | 'Contingency' | 'Farewell' | 'Other'>('Event');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [spentBy, setSpentBy] = useState(config?.managerName || 'Mahfuzur Rahman');
+  const [spentBy, setSpentBy] = useState(config?.managerName || 'Md. Rajib Hossain Sunny (CR)');
   const [referenceDocUrl, setReferenceDocUrl] = useState('');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -32,7 +32,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setAmount('');
       setCategory('Event');
       setDate(new Date().toISOString().split('T')[0]);
-      setSpentBy(config?.managerName || 'Mahfuzur Rahman');
+      setSpentBy(config?.managerName || 'Md. Rajib Hossain Sunny (CR)');
       setReferenceDocUrl('');
       setNotes('');
     }
@@ -149,7 +149,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Spent By / Authorized Person
+                Spent By / Authorized Person (CR)
               </label>
               <input
                 type="text"

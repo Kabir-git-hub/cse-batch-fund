@@ -1,5 +1,21 @@
 import React, { useState, useRef } from 'react';
-import { Check, X, Search, Calendar, ChevronLeft, ChevronRight, Download, FileSpreadsheet } from 'lucide-react';
+import { 
+  Check, 
+  X, 
+  Search, 
+  Calendar, 
+  ChevronLeft, 
+  ChevronRight, 
+  Download, 
+  LayoutGrid, 
+  Table, 
+  User, 
+  CheckCircle2, 
+  AlertCircle, 
+  AlertTriangle,
+  Wallet,
+  Sparkles
+} from 'lucide-react';
 import { StudentFundStatus } from '../types';
 
 interface MonthMatrixViewProps {
@@ -12,6 +28,8 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
   allTargetMonths,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'paid_up' | 'due_1_month' | 'overdue'>('all');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [selectedYearFilter, setSelectedYearFilter] = useState<'ALL' | '2026' | '2027' | '2028'>('ALL');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -23,11 +41,17 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
     return true;
   });
 
-  const filtered = studentStatuses.filter(
-    (item) =>
+  // Filter students based on search term and status filter
+  const filtered = studentStatuses.filter((item) => {
+    const matchesSearch =
       item.student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.student.roll.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+      item.student.roll.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesStatus =
+      statusFilter === 'all' || item.status === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
 
   const scrollLeft = () => {
     if (scrollContainerRef.current) {
@@ -43,16 +67,17 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
 
   // Export matrix data as CSV for Google Sheets
   const handleExportCSV = () => {
-    const headers = ['Roll', 'Name', ...visibleMonths, 'Total Paid Months', 'Total Due Months'];
+    const headers = ['Roll', 'Name', 'Total Paid (BDT)', 'Months Paid Count', 'Months Due Count', ...visibleMonths];
     const rows = filtered.map((item) => {
       const paidSet = new Set(item.monthsPaidList);
       const monthCols = visibleMonths.map((m) => (paidSet.has(m) ? 'PAID' : 'DUE'));
       return [
         `"${item.student.roll}"`,
         `"${item.student.name}"`,
-        ...monthCols,
+        item.totalPaid,
         item.monthsPaidList.length,
         item.totalMonthsDue,
+        ...monthCols,
       ].join(',');
     });
 
@@ -60,216 +85,419 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `SEC_CSE_Batch17_Fund_Matrix_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `SEC_CSE_Batch17_Fund_Contributions_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  // Generate consistent color palette and initials for student avatars
+  const getAvatarMeta = (name: string, roll: string) => {
+    const initials = name
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join('') || roll.slice(-2);
+
+    const colors = [
+      'from-emerald-500 to-teal-600',
+      'from-teal-500 to-cyan-600',
+      'from-blue-500 to-indigo-600',
+      'from-indigo-500 to-purple-600',
+      'from-violet-500 to-fuchsia-600',
+      'from-sky-500 to-blue-600',
+      'from-amber-500 to-emerald-600',
+    ];
+    const hash = roll.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const bgGradient = colors[hash % colors.length];
+
+    return { initials, bgGradient };
+  };
+
   return (
     <div className="space-y-4">
-      {/* Search, Filter & Scroll Control Header */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
+      {/* Control Header: Search, View Mode Toggles, Status Filter & Export */}
+      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs space-y-4">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div>
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-emerald-600" /> Month-by-Month Contribution Tracker
+            <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-emerald-600" /> Contribution Tracker
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              August 2026 – January 2028 batch payment matrix (৳50/mo fee). Use arrows or toggles to view up to Jan 2028.
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Track student batch monthly contributions (৳50/month per student).
             </p>
           </div>
 
-          {/* Controls: Search, Export & Horizontal Scroll Toggles */}
+          {/* Controls: View Switcher, Search, and Export */}
           <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+            {/* View Mode Toggle: Mini Cards vs Matrix Table */}
+            <div className="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80">
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  viewMode === 'cards'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Mini Cards View"
+              >
+                <LayoutGrid className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Mini Cards</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  viewMode === 'table'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Full Matrix Table View"
+              >
+                <Table className="w-3.5 h-3.5 text-teal-600" />
+                <span>Matrix Table</span>
+              </button>
+            </div>
+
+            {/* Search Input */}
             <div className="relative flex-1 sm:w-60">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search student roll or name..."
+                placeholder="Search student roll, name..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all placeholder:text-slate-400"
               />
             </div>
 
             {/* Export CSV for Google Sheet */}
             <button
               onClick={handleExportCSV}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition border border-slate-200"
+              className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all border border-slate-200/80 cursor-pointer"
               title="Export as CSV for Google Sheets"
             >
               <Download className="w-3.5 h-3.5 text-slate-600" />
               <span>Export CSV</span>
             </button>
+          </div>
+        </div>
 
-            {/* Scroll Navigation Buttons */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+        {/* Filter Pills */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="text-[11px] font-bold text-slate-500 px-1 uppercase tracking-wider">Status:</span>
+            <button
+              onClick={() => setStatusFilter('all')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === 'all'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              All ({studentStatuses.length})
+            </button>
+            <button
+              onClick={() => setStatusFilter('paid_up')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                statusFilter === 'paid_up'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+              }`}
+            >
+              <CheckCircle2 className="w-3 h-3" /> Paid Up
+            </button>
+            <button
+              onClick={() => setStatusFilter('due_1_month')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                statusFilter === 'due_1_month'
+                  ? 'bg-amber-500 text-white shadow-xs'
+                  : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+              }`}
+            >
+              <AlertTriangle className="w-3 h-3" /> 1 Month Due
+            </button>
+            <button
+              onClick={() => setStatusFilter('overdue')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                statusFilter === 'overdue'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+              }`}
+            >
+              <AlertCircle className="w-3 h-3" /> Overdue
+            </button>
+          </div>
+
+          {/* Quick Count Badge */}
+          <div className="text-xs font-bold text-slate-500">
+            Showing <span className="text-slate-900">{filtered.length}</span> students
+          </div>
+        </div>
+      </div>
+
+      {/* VIEW MODE 1: MINI CARDS GRID (PRIMARY UX REDESIGN) */}
+      {viewMode === 'cards' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {[...filtered]
+            .sort((a, b) => Number(a.student.roll) - Number(b.student.roll))
+            .map((item) => {
+              const { initials, bgGradient } = getAvatarMeta(item.student.name, item.student.roll);
+              const paidCount = item.monthsPaidList.length;
+              const totalTarget = allTargetMonths.length || 1;
+              const progressPct = Math.min(100, Math.round((paidCount / totalTarget) * 100));
+
+              return (
+                <div
+                  key={item.student.id}
+                  className="bg-white rounded-2xl p-4 sm:p-4.5 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-emerald-200 transition-all duration-200 flex flex-col justify-between group relative overflow-hidden"
+                >
+                  {/* Top: Avatar & Roll Badge */}
+                  <div>
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${bgGradient} text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0 group-hover:scale-105 transition-transform`}>
+                          {initials || <User className="w-5 h-5" />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <div className="font-mono text-xs font-bold text-slate-900 bg-slate-100/90 border border-slate-200/80 px-2 py-0.5 rounded-md inline-block">
+                              Roll {item.student.roll}
+                            </div>
+                            {(item.student.name.includes('Rajib') || item.student.roll === '2023331523') && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider border border-emerald-300">
+                                CR
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="font-extrabold text-slate-900 text-sm line-clamp-1 mt-1">
+                            {item.student.name}
+                          </h3>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Middle: Contributed Amount & Dues Status */}
+                    <div className="my-3 p-3 bg-slate-50/80 rounded-xl border border-slate-100 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Contributed</span>
+                        <span className="text-base font-extrabold text-emerald-700 font-mono">
+                          ৳ {item.totalPaid.toLocaleString()}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-200/50">
+                        <span className="text-[11px] font-semibold text-slate-500">Status</span>
+                        {item.status === 'paid_up' && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md">
+                            <CheckCircle2 className="w-3 h-3" /> Up-to-Date
+                          </span>
+                        )}
+                        {item.status === 'due_1_month' && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-md">
+                            <AlertTriangle className="w-3 h-3" /> ৳50 Due
+                          </span>
+                        )}
+                        {item.status === 'overdue' && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-100/70 px-2 py-0.5 rounded-md">
+                            <AlertCircle className="w-3 h-3" /> ৳{item.dueAmount} Due
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom: Progress Bar of Paid Months */}
+                  <div className="pt-1">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 mb-1">
+                      <span>Paid Months</span>
+                      <span className="font-mono text-slate-800">{paidCount} / {totalTarget}</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden border border-slate-200/50">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          item.status === 'paid_up'
+                            ? 'bg-emerald-500'
+                            : item.status === 'due_1_month'
+                            ? 'bg-amber-500'
+                            : 'bg-rose-500'
+                        }`}
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+          {filtered.length === 0 && (
+            <div className="col-span-full py-12 text-center text-slate-400 text-sm font-medium bg-white rounded-2xl border border-slate-200/80">
+              No students match your filter or search criteria.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* VIEW MODE 2: DETAILED MATRIX TABLE */}
+      {viewMode === 'table' && (
+        <div className="space-y-3">
+          {/* Year selector and scroll controls for table */}
+          <div className="bg-white rounded-2xl p-3 border border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 text-xs">
+              <span className="text-[11px] font-bold text-slate-500 px-2 uppercase tracking-wider">Year:</span>
+              <button
+                onClick={() => setSelectedYearFilter('ALL')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  selectedYearFilter === 'ALL'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setSelectedYearFilter('2026')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  selectedYearFilter === '2026'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                2026
+              </button>
+              <button
+                onClick={() => setSelectedYearFilter('2027')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  selectedYearFilter === '2027'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                2027
+              </button>
+              <button
+                onClick={() => setSelectedYearFilter('2028')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  selectedYearFilter === '2028'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                2028
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200/80">
               <button
                 onClick={scrollLeft}
-                className="p-1 hover:bg-white text-slate-700 rounded transition shadow-2xs"
-                title="Scroll Left (Previous Months)"
+                className="p-1 hover:bg-white text-slate-700 rounded-lg transition-all shadow-2xs cursor-pointer"
+                title="Scroll Left"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-[11px] font-bold text-slate-600 px-1">Scroll Months</span>
+              <span className="text-[11px] font-bold text-slate-600 px-1.5">Months</span>
               <button
                 onClick={scrollRight}
-                className="p-1 hover:bg-emerald-600 text-white bg-emerald-500 rounded transition shadow-2xs flex items-center gap-0.5 px-2"
-                title="Scroll Right to Jan 2028"
+                className="p-1 hover:bg-emerald-600 text-white bg-emerald-500 rounded-lg transition-all shadow-2xs flex items-center gap-0.5 px-2 cursor-pointer"
+                title="Scroll Right"
               >
-                <span className="text-[10px] font-extrabold uppercase">Next</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           </div>
-        </div>
 
-        {/* Year Toggle Tabs & Status Badges */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
-            <span className="text-[11px] font-semibold text-slate-500 px-2 hidden sm:inline">Year View:</span>
-            <button
-              onClick={() => setSelectedYearFilter('ALL')}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition ${
-                selectedYearFilter === 'ALL'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-            >
-              All (Aug 2026 - Jan 2028)
-            </button>
-            <button
-              onClick={() => setSelectedYearFilter('2026')}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition ${
-                selectedYearFilter === '2026'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-            >
-              2026 (Aug-Dec)
-            </button>
-            <button
-              onClick={() => setSelectedYearFilter('2027')}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition ${
-                selectedYearFilter === '2027'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-            >
-              2027 (Full Year)
-            </button>
-            <button
-              onClick={() => setSelectedYearFilter('2028')}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition ${
-                selectedYearFilter === '2028'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-            >
-              2028 (Jan)
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs font-semibold shrink-0">
-            <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" /> Paid
-            </span>
-            <span className="inline-flex items-center gap-1 text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-md">
-              <span className="w-2 h-2 rounded-full bg-rose-500" /> Due
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Grid Table Container with Horizontal Scroll Ref */}
-      <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden relative">
-        {/* Table Right Arrow Indicator Overlay */}
-        <div className="absolute right-2 top-3 z-30 pointer-events-none hidden sm:flex items-center gap-1 bg-slate-900/80 text-emerald-300 text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur-xs">
-          <span>Scroll ▶</span>
-        </div>
-
-        <div ref={scrollContainerRef} className="overflow-x-auto scroll-smooth">
-          <table className="w-full text-left text-xs border-collapse min-w-[800px]">
-            <thead className="bg-slate-900 text-white font-mono sticky top-0 z-10">
-              <tr>
-                <th className="py-3 px-3 border-b border-slate-800 sticky left-0 z-20 bg-slate-900 font-bold min-w-[140px]">
-                  Roll & Student
-                </th>
-                {visibleMonths.map((m) => (
-                  <th key={m} className="py-3 px-2 text-center border-b border-slate-800 font-semibold min-w-[75px]">
-                    <div className="text-[11px] text-emerald-400 font-bold">{m}</div>
-                  </th>
-                ))}
-                <th className="py-3 px-3 text-center border-b border-slate-800 font-bold min-w-[90px]">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-sans">
-              {[...filtered]
-                .sort((a, b) => Number(a.student.roll) - Number(b.student.roll))
-                .map((item) => {
-                const paidSet = new Set(item.monthsPaidList);
-                return (
-                  <tr key={item.student.id} className="hover:bg-slate-50/90 transition">
-                    {/* Sticky Left Name Column */}
-                    <td className="py-2.5 px-3 sticky left-0 bg-white hover:bg-slate-50 border-r border-slate-200 z-10 shadow-xs">
-                      <div className="font-mono font-bold text-slate-900">{item.student.roll}</div>
-                      <div className="text-[11px] text-slate-600 truncate max-w-[120px]">{item.student.name}</div>
-                    </td>
-
-                    {/* Month status cells */}
-                    {visibleMonths.map((month) => {
-                      const isPaid = paidSet.has(month);
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden relative">
+            <div ref={scrollContainerRef} className="overflow-x-auto scroll-smooth">
+              <table className="w-full text-left text-xs border-collapse min-w-[800px]">
+                <thead className="bg-slate-900 text-white font-mono sticky top-0 z-10">
+                  <tr>
+                    <th className="py-3 px-3 border-b border-slate-800 sticky left-0 z-20 bg-slate-900 font-bold min-w-[140px]">
+                      Roll & Student
+                    </th>
+                    {visibleMonths.map((m) => (
+                      <th key={m} className="py-3 px-2 text-center border-b border-slate-800 font-semibold min-w-[75px]">
+                        <div className="text-[11px] text-emerald-400 font-bold">{m}</div>
+                      </th>
+                    ))}
+                    <th className="py-3 px-3 text-center border-b border-slate-800 font-bold min-w-[90px]">
+                      Paid / Target
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-sans">
+                  {[...filtered]
+                    .sort((a, b) => Number(a.student.roll) - Number(b.student.roll))
+                    .map((item) => {
+                      const paidSet = new Set(item.monthsPaidList);
                       return (
-                        <td key={month} className="py-2 px-1 text-center border-r border-slate-100">
-                          {isPaid ? (
+                        <tr key={item.student.id} className="hover:bg-slate-50/90 transition-colors">
+                          <td className="py-2.5 px-3 sticky left-0 bg-white hover:bg-slate-50 border-r border-slate-200/80 z-10 shadow-2xs">
+                            <div className="flex items-center gap-1">
+                              <span className="font-mono font-bold text-slate-900">{item.student.roll}</span>
+                              {(item.student.name.includes('Rajib') || item.student.roll === '2023331523') && (
+                                <span className="px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase">
+                                  CR
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-600 font-medium truncate max-w-[120px]">{item.student.name}</div>
+                          </td>
+
+                          {visibleMonths.map((month) => {
+                            const isPaid = paidSet.has(month);
+                            return (
+                              <td key={month} className="py-2 px-1 text-center border-r border-slate-100/80">
+                                {isPaid ? (
+                                  <span
+                                    title={`Paid for ${month}`}
+                                    className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-emerald-500 text-white font-bold shadow-2xs mx-auto"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </span>
+                                ) : (
+                                  <span
+                                    title={`Due for ${month}`}
+                                    className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-rose-50 text-rose-600 font-bold mx-auto border border-rose-200/80"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          })}
+
+                          <td className="py-2 px-2 text-center font-bold">
                             <span
-                              title={`Paid for ${month}`}
-                              className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-emerald-500 text-white font-bold shadow-xs mx-auto"
+                              className={`inline-block px-2.5 py-1 rounded-md text-[11px] font-mono font-bold ${
+                                item.totalMonthsDue === 0
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/80'
+                                  : 'bg-rose-50 text-rose-800 border border-rose-200/80'
+                              }`}
                             >
-                              <Check className="w-3.5 h-3.5" />
+                              {item.monthsPaidList.length}/{allTargetMonths.length} Mo
                             </span>
-                          ) : (
-                            <span
-                              title={`Due for ${month}`}
-                              className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-rose-100 text-rose-600 font-bold mx-auto border border-rose-200"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </span>
-                          ) /* paid check end */}
-                        </td>
+                          </td>
+                        </tr>
                       );
                     })}
 
-                    {/* Total Paid / Total Due summary badge */}
-                    <td className="py-2 px-2 text-center font-bold">
-                      <span
-                        className={`inline-block px-2 py-1 rounded text-[11px] ${
-                          item.totalMonthsDue === 0
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-rose-100 text-rose-800'
-                        }`}
-                      >
-                        {item.monthsPaidList.length}/{allTargetMonths.length} Mo
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={visibleMonths.length + 2} className="py-12 text-center text-slate-400 text-sm">
-                    No student records found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={visibleMonths.length + 2} className="py-12 text-center text-slate-400 text-sm font-medium">
+                        No student records found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
+
+
