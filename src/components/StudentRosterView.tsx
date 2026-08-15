@@ -195,9 +195,10 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
                           setStudentToDelete(item.student);
                         }}
                         title={`Delete student ${item.student.name}`}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center border border-transparent hover:border-rose-200"
+                        aria-label={`Delete student ${item.student.name}`}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-full transition-colors cursor-pointer inline-flex items-center justify-center border border-transparent hover:border-red-200"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4 text-red-500 hover:text-red-700" />
                       </button>
                     </td>
                   )}
