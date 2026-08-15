@@ -16,7 +16,7 @@ import { GoogleSheetSyncModal } from './components/modals/GoogleSheetSyncModal';
 
 import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './types';
 import { PRIMARY_ADMIN_EMAIL } from './config/adminConfig';
-import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw, Clock } from 'lucide-react';
+import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw } from 'lucide-react';
 import { SecLogo } from './components/SecLogo';
 
 export default function App() {
