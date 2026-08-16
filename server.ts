@@ -924,6 +924,7 @@ async function startServer() {
       studentName: newReceipt.studentName,
       name: newReceipt.studentName,
       amount: newReceipt.amount,
+      totalPaid: studentTotalPaid,
       status: newStatus,
       monthsPaid: newReceipt.monthsPaid,
       month: (newReceipt.monthsPaid || []).join(', '),

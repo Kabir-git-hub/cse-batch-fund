@@ -178,13 +178,15 @@ function doPost(e) {
         
         if (rowRoll && targetRoll && (rowRoll === targetRoll || rowRoll.indexOf(targetRoll) >= 0 || targetRoll.indexOf(rowRoll) >= 0)) {
           var currentPaid = Number(values[i][totalPaidCol]) || 0;
-          sheet.getRange(i + 1, totalPaidCol + 1).setValue(currentPaid + Number(data.amount));
+          var newPaidVal = (data.totalPaid !== undefined && data.totalPaid !== null) ? Number(data.totalPaid) : (currentPaid + Number(data.amount));
+          sheet.getRange(i + 1, totalPaidCol + 1).setValue(newPaidVal);
           found = true;
           break;
         }
       }
       if (!found) {
-        sheet.appendRow([data.studentRoll, data.studentName, '', data.amount, 'Paid']);
+        var initialPaid = (data.totalPaid !== undefined && data.totalPaid !== null) ? Number(data.totalPaid) : Number(data.amount);
+        sheet.appendRow([data.studentRoll || data.roll, data.studentName || data.name, '', initialPaid, data.status || 'Paid']);
       }
     } else if (data.action === 'delete_payment') {
       var sheet = ss.getSheetByName('Sheet1') || ss.getSheets()[0];

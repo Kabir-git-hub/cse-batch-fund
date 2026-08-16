@@ -5,6 +5,8 @@ export interface Student {
   phone: string;
   status: 'active' | 'inactive';
   joinedMonth: string; // e.g. "2025-01"
+  totalPaid?: number;
+  dueAmount?: number;
 }
 
 export interface PaymentReceipt {

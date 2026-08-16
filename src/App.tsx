@@ -342,6 +342,18 @@ export default function App() {
       const paymentAmount = Number(paymentData.amount) || 0;
       const newStatus = (student?.status || 'active') as 'active' | 'inactive';
 
+      // 0. Calculate Payment Accumulation: Combine prior total with new payment
+      const studentStatus = studentStatuses.find((st) => st.student.roll === studentRoll || st.student.id === (student?.id || ''));
+      const receiptsTotal = receipts
+        .filter((r) => r.studentRoll === studentRoll || (student && r.studentId === student.id))
+        .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+      const currentPaid = Math.max(
+        Number(student?.totalPaid || 0),
+        Number(studentStatus?.totalPaid || 0),
+        receiptsTotal
+      );
+      const updatedTotalPaid = currentPaid + paymentAmount;
+
       const receiptObj: PaymentReceipt = {
         id: receiptId,
         receiptNo: paymentData.receiptNo || ('SEC17-PAY-' + Math.floor(1000 + Math.random() * 9000)),
@@ -358,21 +370,29 @@ export default function App() {
         verified: true,
       };
 
-      // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload matching
+      // 1. Post to Google Sheets Webhook FIRST with CORS bypass & accumulated totalPaid payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
-          method: 'POST',
-          mode: 'no-cors',
-          cache: 'no-store',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'payment',
-            roll: studentRoll,
-            amount: paymentAmount,
-            status: newStatus,
-          }),
-        }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
+        try {
+          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
+            method: 'POST',
+            mode: 'no-cors',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'payment',
+              type: 'payment',
+              roll: studentRoll,
+              studentRoll: studentRoll,
+              studentName: studentName,
+              amount: paymentAmount,
+              totalPaid: updatedTotalPaid,
+              status: newStatus,
+            }),
+          });
+        } catch (e) {
+          console.warn('Direct Apps Script doPost notice:', e);
+        }
       }
 
       // 2. Append-Only Archive to Firebase Firestore `receipts`
@@ -383,17 +403,13 @@ export default function App() {
       }
 
       // 3. Update student record in Firestore `students` collection (totalPaid & status)
-      const currentStudentTotal = receipts
-        .filter((r) => r.studentRoll === studentRoll || (student && r.studentId === student.id))
-        .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-      const newTotalPaid = currentStudentTotal + paymentAmount;
       const studentDocId = student?.id || ('s_' + studentRoll.trim().replace(/[^0-9a-zA-Z]/g, ''));
 
       try {
         const studentDocRef = doc(db, 'students', studentDocId);
         try {
           await updateDoc(studentDocRef, {
-            totalPaid: newTotalPaid,
+            totalPaid: updatedTotalPaid,
             status: newStatus,
           });
         } catch (updateErr) {
@@ -404,7 +420,7 @@ export default function App() {
             phone: student?.phone || '',
             status: newStatus,
             joinedMonth: student?.joinedMonth || config?.startMonth || '2026-08',
-            totalPaid: newTotalPaid,
+            totalPaid: updatedTotalPaid,
           }, { merge: true });
         }
       } catch (studentErr) {
@@ -421,8 +437,10 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to record payment');
 
-      // 5. Re-fetch current data
+      // 5. Allow Google Apps Script enough time to finish writing, then auto re-fetch
+      await new Promise((res) => setTimeout(res, 1500));
       await fetchFundData();
+
       if (data.receipt || receiptObj) {
         setSelectedReceipt(data.receipt || receiptObj);
         setSelectedExpense(null);
@@ -459,21 +477,25 @@ export default function App() {
       // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
-          method: 'POST',
-          mode: 'no-cors',
-          cache: 'no-store',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            type: 'expense',
-            voucherNo: expenseObj.voucherNo || expenseObj.id,
-            title: expenseObj.title,
-            category: expenseObj.category,
-            amount: expenseObj.amount,
-            date: expenseObj.date,
-            spentBy: expenseObj.spentBy,
-          }),
-        }).catch((e) => console.warn('Direct Apps Script doPost expense notice:', e));
+        try {
+          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
+            method: 'POST',
+            mode: 'no-cors',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              type: 'expense',
+              voucherNo: expenseObj.voucherNo || expenseObj.id,
+              title: expenseObj.title,
+              category: expenseObj.category,
+              amount: expenseObj.amount,
+              date: expenseObj.date,
+              spentBy: expenseObj.spentBy,
+            }),
+          });
+        } catch (e) {
+          console.warn('Direct Apps Script doPost expense notice:', e);
+        }
       }
 
       // 2. Append-Only Archive to Firebase Firestore `expenses`
@@ -493,7 +515,8 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to add expense');
 
-      // 4. Re-fetch current data
+      // 4. Allow Google Apps Script enough time to finish writing, then auto re-fetch
+      await new Promise((res) => setTimeout(res, 1500));
       await fetchFundData();
     } catch (err: any) {
       alert('Error: ' + err.message);
@@ -517,18 +540,22 @@ export default function App() {
       // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
-          method: 'POST',
-          mode: 'no-cors',
-          cache: 'no-store',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            type: 'add_student',
-            studentRoll: studentObj.roll,
-            name: studentObj.name,
-            phone: studentObj.phone,
-          }),
-        }).catch((e) => console.warn('Direct Apps Script doPost add_student notice:', e));
+        try {
+          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
+            method: 'POST',
+            mode: 'no-cors',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              type: 'add_student',
+              studentRoll: studentObj.roll,
+              name: studentObj.name,
+              phone: studentObj.phone,
+            }),
+          });
+        } catch (e) {
+          console.warn('Direct Apps Script doPost add_student notice:', e);
+        }
       }
 
       // 2. Append-Only Archive to Firebase Firestore `students`
@@ -548,7 +575,8 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save student');
 
-      // 4. Re-fetch current data
+      // 4. Allow Google Apps Script enough time to finish writing, then auto re-fetch
+      await new Promise((res) => setTimeout(res, 1500));
       await fetchFundData();
       setSyncToast({ message: `Student ${studentData.name} saved successfully!`, type: 'success' });
     } catch (err: any) {
@@ -562,16 +590,20 @@ export default function App() {
       // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
-          method: 'POST',
-          mode: 'no-cors',
-          cache: 'no-store',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            type: 'delete_student',
-            studentRoll: student.roll,
-          }),
-        }).catch((e) => console.warn('Direct Apps Script doPost delete_student notice:', e));
+        try {
+          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
+            method: 'POST',
+            mode: 'no-cors',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              type: 'delete_student',
+              studentRoll: student.roll,
+            }),
+          });
+        } catch (e) {
+          console.warn('Direct Apps Script doPost delete_student notice:', e);
+        }
       }
 
       // 2. STRICT RULE: NEVER delete historical documents from Firestore (Indestructible Append-Only Archive)
@@ -592,7 +624,8 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete student');
 
-      // 4. Re-fetch current data
+      // 4. Allow Google Apps Script enough time to finish writing, then auto re-fetch
+      await new Promise((res) => setTimeout(res, 1500));
       await fetchFundData();
       setSyncToast({ message: `Student ${student.name} (${student.roll}) removed from active sheet!`, type: 'success' });
     } catch (err: any) {
