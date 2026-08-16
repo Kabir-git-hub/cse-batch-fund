@@ -483,22 +483,15 @@ function doPost(e) {
                   <div className="flex items-center gap-2">
                     <Mail className="w-3.5 h-3.5 text-emerald-400" />
                     <span className="text-xs font-mono font-medium text-slate-200">{email}</span>
-                    {email.toLowerCase() === 'alaminkabbirrrr@gmail.com' && (
-                      <span className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-bold uppercase">
-                        Primary Super Admin
-                      </span>
-                    )}
                   </div>
 
-                  {email.toLowerCase() !== 'alaminkabbirrrr@gmail.com' && (
-                    <button
-                      onClick={() => handleRemoveAdminEmail(email)}
-                      className="p-1 text-slate-400 hover:text-rose-400 rounded transition cursor-pointer"
-                      title="Remove Admin Access"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleRemoveAdminEmail(email)}
+                    className="p-1 text-slate-400 hover:text-rose-400 rounded transition cursor-pointer"
+                    title="Remove Admin Access"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               ))}
             </div>

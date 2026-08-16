@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Shield, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { auth, googleProvider, signInWithPopup, db, doc, getDoc, collection, getDocs } from '../../firebase';
+import { auth, googleProvider, signInWithPopup, db, doc, getDoc } from '../../firebase';
 
 interface AdminPinModalProps {
   isOpen: boolean;
@@ -82,7 +82,7 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
     setLoading(true);
 
     try {
-      // Primary Method: Firebase Auth Google Sign-In Popup
+      // 1. Firebase Auth Google Sign-In Popup
       const result = await signInWithPopup(auth, googleProvider);
       const userEmail = result.user?.email;
 
@@ -90,33 +90,34 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
         throw new Error('Google Sign-In failed: No email address returned.');
       }
 
-      // Direct Firestore check against admins collection
-      let isFirestoreAdmin = false;
       const cleanEmail = userEmail.trim().toLowerCase();
-      try {
-        const adminDoc = await getDoc(doc(db, 'admins', cleanEmail));
-        if (adminDoc.exists()) {
-          isFirestoreAdmin = true;
-        } else {
-          const adminsSnap = await getDocs(collection(db, 'admins'));
-          if (adminsSnap.docs.some(d => d.id.toLowerCase() === cleanEmail || (d.data()?.email && d.data().email.toLowerCase() === cleanEmail))) {
-            isFirestoreAdmin = true;
-          }
-        }
-      } catch (fsErr) {
-        console.warn('Direct Firestore admin lookup warning:', fsErr);
+
+      // 2. Strict Config Query: ONLY fetch the 'batch' document from the 'config' collection
+      const configSnap = await getDoc(doc(db, 'config', 'batch'));
+      if (!configSnap.exists()) {
+        throw new Error('Configuration document not found in Firestore config/batch.');
       }
 
-      // Verify email with system backend & Firestore
+      const configData = configSnap.data();
+      const rawAllowed = Array.isArray(configData?.allowedAdminEmails) ? configData.allowedAdminEmails : [];
+      const allowedAdminEmails = rawAllowed.map((e: any) => String(e || '').trim().toLowerCase());
+
+      // 3. Email Array Check: verify exact existence in allowedAdminEmails array
+      const isAllowed = allowedAdminEmails.includes(cleanEmail);
+      if (!isAllowed) {
+        throw new Error(`Access Denied! '${userEmail}' is not in the authorized admin list in Firestore config.`);
+      }
+
+      // 4. Verify email with system backend to complete session setup
       const ok = await onVerifyEmail(userEmail, undefined, true);
-      if (ok || isFirestoreAdmin) {
+      if (ok) {
         setSuccessMsg(`Google Account Verified! Access Granted for ${userEmail}`);
         setTimeout(() => {
           onClose();
         }, 600);
       }
     } catch (err: any) {
-      console.warn('Firebase Auth popup attempt failed or canceled:', err);
+      console.warn('Google Sign-In authentication error:', err);
 
       // If popup blocked or popup closed or domain error, try Server OAuth fallback
       if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user' || err.code === 'auth/unauthorized-domain' || err.code === 'auth/operation-not-allowed') {

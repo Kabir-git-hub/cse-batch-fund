@@ -18,7 +18,7 @@ import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundSt
 import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw } from 'lucide-react';
 import { SecLogo } from './components/SecLogo';
 import { calculateFundDetails } from './utils/fundCalculator';
-import { db, doc, collection, onSnapshot } from './firebase';
+import { db, doc, collection, onSnapshot, getDoc } from './firebase';
 
 const defaultEmptyConfig: BatchConfig = {
   batchName: 'CSE Batch-17',
@@ -29,7 +29,7 @@ const defaultEmptyConfig: BatchConfig = {
   contactPhone: '01790853898',
   bkashNumber: '01790853898',
   nagadNumber: '01790853898',
-  adminPin: '1717',
+  adminPin: '',
   allowedAdminEmails: [],
   googleSheetPaymentsUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0',
   googleSheetExpensesUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=503096906#gid=503096906',
@@ -80,12 +80,26 @@ export default function App() {
 
   // Admin / Manager State
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
-  const [adminPinInput, setAdminPinInput] = useState<string>('1717');
+  const [adminPinInput, setAdminPinInput] = useState<string>('');
   const [adminEmail, setAdminEmail] = useState<string>(() => localStorage.getItem('sec_admin_email') || '');
 
-  // Verify Admin Email Handler
+  // Verify Admin Email Handler - Strict check against Firestore config/batch
   const handleVerifyEmail = async (emailToVerify: string, pinToVerify?: string, verifiedByGoogle?: boolean): Promise<boolean> => {
     try {
+      const cleanEmail = emailToVerify.trim().toLowerCase();
+
+      // Strict Config Query: Check doc(db, 'config', 'batch')
+      const configSnap = await getDoc(doc(db, 'config', 'batch'));
+      if (configSnap.exists()) {
+        const configData = configSnap.data();
+        const allowedList = Array.isArray(configData?.allowedAdminEmails)
+          ? configData.allowedAdminEmails.map((e: any) => String(e || '').trim().toLowerCase())
+          : [];
+        if (!allowedList.includes(cleanEmail)) {
+          throw new Error(`Access Denied! '${emailToVerify}' is not in the authorized admin list in Firestore config.`);
+        }
+      }
+
       const res = await fetch('/api/fund/admin/verify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -107,8 +121,8 @@ export default function App() {
       }
 
       setIsAdmin(true);
-      setAdminEmail(data.email);
-      localStorage.setItem('sec_admin_email', data.email);
+      setAdminEmail(data.email || emailToVerify);
+      localStorage.setItem('sec_admin_email', data.email || emailToVerify);
       return true;
     } catch (err: any) {
       console.error('Email verification error:', err);
@@ -218,7 +232,22 @@ export default function App() {
         doc(db, 'config', 'batch'),
         (snap) => {
           if (snap.exists()) {
-            setConfig(snap.data() as BatchConfig);
+            const newConfig = snap.data() as BatchConfig;
+            setConfig(newConfig);
+
+            // Instant Revocation: If currently verified admin email was removed from allowedAdminEmails in Firestore, immediately revoke access
+            const currentStoredEmail = localStorage.getItem('sec_admin_email') || '';
+            if (currentStoredEmail) {
+              const allowedList = Array.isArray(newConfig?.allowedAdminEmails)
+                ? newConfig.allowedAdminEmails.map((e) => String(e || '').trim().toLowerCase())
+                : [];
+              if (!allowedList.includes(currentStoredEmail.trim().toLowerCase())) {
+                setIsAdmin(false);
+                setAdminEmail('');
+                setAdminPinInput('');
+                localStorage.removeItem('sec_admin_email');
+              }
+            }
           }
         },
         (err) => console.warn('Firestore config onSnapshot error:', err)
@@ -284,7 +313,22 @@ export default function App() {
       const data = await res.json();
 
       if (data) {
-        if (data.config) setConfig(data.config);
+        if (data.config) {
+          setConfig(data.config);
+          // Instant Revocation check on API fetch too
+          const currentStoredEmail = localStorage.getItem('sec_admin_email') || '';
+          if (currentStoredEmail) {
+            const allowedList = Array.isArray(data.config?.allowedAdminEmails)
+              ? data.config.allowedAdminEmails.map((e: any) => String(e || '').trim().toLowerCase())
+              : [];
+            if (!allowedList.includes(currentStoredEmail.trim().toLowerCase())) {
+              setIsAdmin(false);
+              setAdminEmail('');
+              setAdminPinInput('');
+              localStorage.removeItem('sec_admin_email');
+            }
+          }
+        }
         if (data.students) setStudents(data.students);
         if (data.receipts) setReceipts(data.receipts);
         if (data.expenses) setExpenses(data.expenses);
@@ -305,11 +349,12 @@ export default function App() {
     }
   };
 
-  // Manager Pin Handler
+  // Strict PIN check against Firestore config (No hardcoded fallback)
   const handleVerifyPin = (pin: string): boolean => {
-    if (config && (pin === config.adminPin || pin === '1717')) {
+    const enteredPin = (pin || '').trim();
+    if (config && config.adminPin && enteredPin && enteredPin === config.adminPin.trim()) {
       setIsAdmin(true);
-      setAdminPinInput(pin);
+      setAdminPinInput(enteredPin);
       return true;
     }
     return false;

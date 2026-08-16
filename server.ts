@@ -39,7 +39,7 @@ const defaultEmptyConfig: BatchConfig = {
   contactPhone: '01790853898',
   bkashNumber: '01790853898',
   nagadNumber: '01790853898',
-  adminPin: '1717',
+  adminPin: '',
   allowedAdminEmails: [],
   googleSheetPaymentsUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0',
   googleSheetExpensesUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=503096906#gid=503096906',
@@ -58,12 +58,11 @@ async function loadDBAsync(): Promise<DBStructure> {
     return cachedDb;
   }
   try {
-    const [configSnap, studentsSnap, receiptsSnap, expensesSnap, adminsSnap] = await Promise.all([
+    const [configSnap, studentsSnap, receiptsSnap, expensesSnap] = await Promise.all([
       getDoc(doc(firestoreDb, 'config', 'batch')),
       getDocs(collection(firestoreDb, 'students')),
       getDocs(collection(firestoreDb, 'receipts')),
       getDocs(collection(firestoreDb, 'expenses')),
-      getDocs(collection(firestoreDb, 'admins')),
     ]);
 
     let config: BatchConfig = configSnap.exists()
@@ -74,33 +73,8 @@ async function loadDBAsync(): Promise<DBStructure> {
     let receipts: PaymentReceipt[] = receiptsSnap.docs.map((d) => d.data() as PaymentReceipt);
     let expenses: Expense[] = expensesSnap.docs.map((d) => d.data() as Expense);
 
-    // Sync admin emails from admins collection
-    const adminEmailsFromCollection = adminsSnap.docs.map((d) => {
-      const data = d.data();
-      return (data.email || d.id || '').trim().toLowerCase();
-    }).filter(Boolean);
-
     if (!config.allowedAdminEmails) {
       config.allowedAdminEmails = [];
-    }
-
-    // Merge existing admins
-    for (const email of adminEmailsFromCollection) {
-      if (!config.allowedAdminEmails.some((e) => e.trim().toLowerCase() === email)) {
-        config.allowedAdminEmails.push(email);
-      }
-    }
-
-    // Ensure admins in config are saved to admins collection
-    for (const email of config.allowedAdminEmails) {
-      const clean = email.trim().toLowerCase();
-      if (clean && !adminEmailsFromCollection.includes(clean)) {
-        saveFirestoreDoc('admins', clean, {
-          email: clean,
-          role: 'admin',
-          addedAt: new Date().toISOString(),
-        });
-      }
     }
 
     let dirty = false;
@@ -522,20 +496,19 @@ async function startServer() {
     });
   }
 
-  // Helper to verify Admin authorization via Gmail or PIN
+  // Helper to verify Admin authorization via Gmail or PIN - STRICT Firestore config check
   function isAuthorizedAdmin(req: any, dbConfig: BatchConfig): boolean {
     const reqBody = (req && req.body) ? req.body : (req || {});
     const reqQuery = (req && req.query) ? req.query : {};
 
-    const pin = reqBody.pin || reqQuery.pin;
-    const adminEmail = reqBody.adminEmail || reqBody.email || reqQuery.adminEmail || reqQuery.email;
+    const pin = (reqBody.pin || reqQuery.pin || '').trim();
+    const adminEmail = (reqBody.adminEmail || reqBody.email || reqQuery.adminEmail || reqQuery.email || '').trim().toLowerCase();
     const allowed = (dbConfig?.allowedAdminEmails || []).map((e) => (e || '').trim().toLowerCase());
 
-    const checkEmail = (adminEmail || '').trim().toLowerCase();
-    if (checkEmail && allowed.includes(checkEmail)) {
+    if (adminEmail && allowed.includes(adminEmail)) {
       return true;
     }
-    if (pin && (pin === dbConfig.adminPin || pin === '1717')) {
+    if (pin && dbConfig?.adminPin && pin === dbConfig.adminPin.trim()) {
       return true;
     }
     return false;
@@ -696,7 +669,7 @@ async function startServer() {
     }
   });
 
-  // Verify Admin Email Endpoint
+  // Verify Admin Email Endpoint - STRICT Firestore config/batch check
   app.post('/api/fund/admin/verify-email', async (req, res) => {
     try {
       const { email, pin, verifiedByGoogle } = req.body || {};
@@ -710,39 +683,26 @@ async function startServer() {
         return res.json({ success: false, error: 'Please enter a valid Gmail address.' });
       }
 
-      let isAllowed = allowed.includes(emailToVerify);
-      if (!isAllowed) {
-        try {
-          const adminDoc = await getDoc(doc(firestoreDb, 'admins', emailToVerify));
-          if (adminDoc.exists()) {
-            isAllowed = true;
-            if (!db.config.allowedAdminEmails.includes(emailToVerify)) {
-              db.config.allowedAdminEmails.push(emailToVerify);
-            }
-          }
-        } catch (fsErr) {
-          console.warn('Firestore admin verification fallback check:', fsErr);
-        }
-      }
-
+      // Strict check against config's allowedAdminEmails
+      const isAllowed = allowed.includes(emailToVerify);
       if (!isAllowed) {
         return res.json({
           success: false,
-          error: `Access Denied! '${emailToVerify}' is not an authorized Admin Gmail address on this system.`,
+          error: `Access Denied! '${emailToVerify}' is not in the authorized admin list in Firestore config.`,
         });
       }
 
-      // If verified directly via official Google OAuth Popup, skip PIN requirement
+      // If verified directly via Google OAuth Popup, grant access
       if (verifiedByGoogle === true) {
         return res.json({ success: true, email: emailToVerify, allowedAdminEmails: allowed, verifiedByGoogle: true });
       }
 
-      // Otherwise verify Admin Security PIN
-      const validPin = db.config?.adminPin || '1717';
-      if (!pinToVerify || (pinToVerify !== validPin && pinToVerify !== '1717')) {
+      // Otherwise verify Admin Security PIN strictly against db.config.adminPin
+      const validPin = (db.config?.adminPin || '').trim();
+      if (!validPin || !pinToVerify || pinToVerify !== validPin) {
         return res.json({
           success: false,
-          error: `Access Denied! Incorrect Admin Security PIN for '${emailToVerify}'. You must log into Google OAuth or enter the correct PIN to verify access on this device.`,
+          error: `Access Denied! Incorrect Admin Security PIN for '${emailToVerify}'.`,
         });
       }
 
@@ -753,7 +713,7 @@ async function startServer() {
     }
   });
 
-  // Manage Admin Emails Endpoint
+  // Manage Admin Emails Endpoint - STRICTLY updates config/batch
   app.post('/api/fund/admin/manage-emails', (req, res) => {
     const { action, email, requesterEmail, pin } = req.body;
     const db = loadDB();
@@ -776,16 +736,10 @@ async function startServer() {
         return res.status(400).json({ error: 'This email is already an authorized Admin.' });
       }
       db.config.allowedAdminEmails.push(targetEmail);
-      saveFirestoreDoc('admins', targetEmail, {
-        email: targetEmail,
-        role: 'admin',
-        addedAt: new Date().toISOString()
-      });
       saveDB(db);
       return res.json({ success: true, allowedAdminEmails: db.config.allowedAdminEmails, message: `Added ${targetEmail} to Authorized Admins!` });
     } else if (action === 'remove') {
       db.config.allowedAdminEmails = db.config.allowedAdminEmails.filter((e) => e.toLowerCase() !== targetEmail);
-      deleteFirestoreDoc('admins', targetEmail);
       saveDB(db);
       return res.json({ success: true, allowedAdminEmails: db.config.allowedAdminEmails, message: `Removed ${targetEmail} from Admin list.` });
     }

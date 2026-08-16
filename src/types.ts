@@ -44,8 +44,8 @@ export interface BatchConfig {
   contactPhone: string;
   bkashNumber: string;
   nagadNumber: string;
-  adminPin: string; // "1717"
-  allowedAdminEmails?: string[]; // Allowed admin Gmail addresses
+  adminPin: string;
+  allowedAdminEmails?: string[]; // Allowed admin Gmail addresses from Firestore config/batch
   googleSheetUrl?: string; // Main Google Sheet link
   googleSheetPaymentsUrl?: string; // Published CSV link
   googleSheetExpensesUrl?: string; // Published CSV link
