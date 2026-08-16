@@ -18,7 +18,7 @@ import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundSt
 import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw } from 'lucide-react';
 import { SecLogo } from './components/SecLogo';
 import { calculateFundDetails } from './utils/fundCalculator';
-import { db, doc, collection, onSnapshot, getDoc, setDoc, updateDoc, deleteDoc } from './firebase';
+import { db, doc, onSnapshot, getDoc, setDoc, updateDoc } from './firebase';
 
 const defaultEmptyConfig: BatchConfig = {
   batchName: 'CSE Batch-17',
@@ -222,12 +222,12 @@ export default function App() {
     }
   }, [config, students, receipts, expenses]);
 
-  // Load Data with Real-Time Firebase Firestore Listeners
+  // Load Data with Real-Time Firebase Firestore Admin Auth & Sheet-Driven Data Fetching
   useEffect(() => {
     let unsubs: (() => void)[] = [];
 
     try {
-      // 1. Real-time Config listener
+      // 1. Real-time Config listener on `config/batch` strictly for instant Admin Auth & Dynamic Config verification
       const unsubConfig = onSnapshot(
         doc(db, 'config', 'batch'),
         (snap) => {
@@ -253,47 +253,11 @@ export default function App() {
         (err) => console.warn('Firestore config onSnapshot error:', err)
       );
       unsubs.push(unsubConfig);
-
-      // 2. Real-time Students listener
-      const unsubStudents = onSnapshot(
-        collection(db, 'students'),
-        (snap) => {
-          const stds = snap.docs.map((d) => d.data() as Student);
-          if (stds.length > 0) {
-            setStudents(stds);
-          }
-          setLoading(false);
-        },
-        (err) => console.warn('Firestore students onSnapshot error:', err)
-      );
-      unsubs.push(unsubStudents);
-
-      // 3. Real-time Receipts listener
-      const unsubReceipts = onSnapshot(
-        collection(db, 'receipts'),
-        (snap) => {
-          const recs = snap.docs.map((d) => d.data() as PaymentReceipt);
-          setReceipts(recs);
-        },
-        (err) => console.warn('Firestore receipts onSnapshot error:', err)
-      );
-      unsubs.push(unsubReceipts);
-
-      // 4. Real-time Expenses listener
-      const unsubExpenses = onSnapshot(
-        collection(db, 'expenses'),
-        (snap) => {
-          const exps = snap.docs.map((d) => d.data() as Expense);
-          setExpenses(exps);
-        },
-        (err) => console.warn('Firestore expenses onSnapshot error:', err)
-      );
-      unsubs.push(unsubExpenses);
     } catch (listenerErr) {
-      console.warn('Realtime onSnapshot setup failed, falling back to server endpoints:', listenerErr);
+      console.warn('Realtime config onSnapshot setup failed:', listenerErr);
     }
 
-    // Also fetch initial data from backend API
+    // UI Data Source: Read exclusively from Sheets via backend proxy
     fetchFundData();
 
     return () => {
@@ -305,7 +269,7 @@ export default function App() {
     };
   }, []);
 
-  // Fetch from Server API fallback
+  // Fetch from Server API (Source of Truth: Google Sheet Mirror)
   const fetchFundData = async (retryCount = 0) => {
     try {
       const res = await fetch('/api/fund/data');
@@ -360,7 +324,7 @@ export default function App() {
     return false;
   };
 
-  // Submit Payment Receipt: App -> Firebase -> Sheet
+  // Submit Payment Receipt: Google Sheet FIRST -> Firebase Append-Only Archive -> Backend
   const handleAddPayment = async (paymentData: any) => {
     try {
       const receiptId = 'r_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
@@ -386,14 +350,30 @@ export default function App() {
         verified: true,
       };
 
-      // 1. Direct write receipt to Firebase Firestore `receipts` collection
-      try {
-        await setDoc(doc(db, 'receipts', receiptId), receiptObj);
-      } catch (firestoreErr) {
-        console.warn('Direct Firestore receipt write warning:', firestoreErr);
+      // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload matching
+      const webhookUrl = config?.googleSheetWebhookUrl;
+      if (webhookUrl && webhookUrl.includes('script.google.com')) {
+        fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'payment',
+            roll: studentRoll,
+            amount: paymentAmount,
+            status: newStatus,
+          }),
+        }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
       }
 
-      // 2. Immediately update the student's document in `students` collection (totalPaid & status)
+      // 2. Append-Only Archive to Firebase Firestore `receipts`
+      try {
+        await setDoc(doc(db, 'receipts', receiptId), receiptObj, { merge: true });
+      } catch (firestoreErr) {
+        console.warn('Direct Firestore receipt archive warning:', firestoreErr);
+      }
+
+      // 3. Update student record in Firestore `students` collection (totalPaid & status)
       const currentStudentTotal = receipts
         .filter((r) => r.studentRoll === studentRoll || (student && r.studentId === student.id))
         .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
@@ -408,7 +388,6 @@ export default function App() {
             status: newStatus,
           });
         } catch (updateErr) {
-          // If updateDoc fails (e.g. document doesn't exist yet), set with merge
           await setDoc(studentDocRef, {
             id: studentDocId,
             roll: studentRoll,
@@ -420,10 +399,10 @@ export default function App() {
           }, { merge: true });
         }
       } catch (studentErr) {
-        console.warn('Direct Firestore student update warning:', studentErr);
+        console.warn('Direct Firestore student archive warning:', studentErr);
       }
 
-      // 3. Write to backend API (ensures server memory & persistent state consistency)
+      // 4. Update backend API
       const res = await fetch('/api/fund/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -432,21 +411,7 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to record payment');
 
-      // 4. Trigger Google Apps Script Webhook directly via browser with CORS bypass & exact payload
-      const webhookUrl = config?.googleSheetWebhookUrl;
-      if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        fetch(webhookUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            roll: studentRoll,
-            amount: paymentAmount,
-            status: newStatus,
-          }),
-        }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
-      }
-
+      // 5. Re-fetch current data
       await fetchFundData();
       if (data.receipt || receiptObj) {
         setSelectedReceipt(data.receipt || receiptObj);
@@ -458,7 +423,7 @@ export default function App() {
     }
   };
 
-  // Submit Expense: App -> Firebase -> Sheet
+  // Submit Expense: Google Sheet FIRST -> Firebase Append-Only Archive -> Backend
   const handleAddExpense = async (expenseData: any) => {
     try {
       const expenseId = expenseData.id || ('e_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
@@ -481,23 +446,7 @@ export default function App() {
         notes: expenseData.notes || '',
       };
 
-      // 1. Direct write to Firebase Firestore
-      try {
-        await setDoc(doc(db, 'expenses', expenseId), expenseObj);
-      } catch (firestoreErr) {
-        console.warn('Direct Firestore expense write warning:', firestoreErr);
-      }
-
-      // 2. Write to backend API
-      const res = await fetch('/api/fund/expenses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: adminPinInput, adminEmail, expense: expenseObj }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to add expense');
-
-      // 3. Keep sheet updated via direct Webhook doPost with CORS bypass & exact payload
+      // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
         fetch(webhookUrl, {
@@ -513,16 +462,33 @@ export default function App() {
             date: expenseObj.date,
             spentBy: expenseObj.spentBy,
           }),
-        }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
+        }).catch((e) => console.warn('Direct Apps Script doPost expense notice:', e));
       }
 
+      // 2. Append-Only Archive to Firebase Firestore `expenses`
+      try {
+        await setDoc(doc(db, 'expenses', expenseId), expenseObj, { merge: true });
+      } catch (firestoreErr) {
+        console.warn('Direct Firestore expense archive warning:', firestoreErr);
+      }
+
+      // 3. Write to backend API
+      const res = await fetch('/api/fund/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: adminPinInput, adminEmail, expense: expenseObj }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to add expense');
+
+      // 4. Re-fetch current data
       await fetchFundData();
     } catch (err: any) {
       alert('Error: ' + err.message);
     }
   };
 
-  // Add / Edit Student: App -> Firebase -> Sheet
+  // Add / Edit Student: Google Sheet FIRST -> Firebase Append-Only Archive -> Backend
   const handleAddStudent = async (studentData: any) => {
     try {
       const cleanRollVal = String(studentData.roll || '').trim().replace(/[^0-9a-zA-Z]/g, '');
@@ -536,23 +502,7 @@ export default function App() {
         joinedMonth: studentData.joinedMonth || config?.startMonth || '2026-08',
       };
 
-      // 1. Direct write to Firebase Firestore
-      try {
-        await setDoc(doc(db, 'students', studentId), studentObj);
-      } catch (firestoreErr) {
-        console.warn('Direct Firestore student write warning:', firestoreErr);
-      }
-
-      // 2. Write to backend API
-      const res = await fetch('/api/fund/students', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: adminPinInput, adminEmail, student: studentObj }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save student');
-
-      // 3. Keep sheet updated via direct Webhook doPost with CORS bypass & exact payload
+      // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
         fetch(webhookUrl, {
@@ -565,9 +515,26 @@ export default function App() {
             name: studentObj.name,
             phone: studentObj.phone,
           }),
-        }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
+        }).catch((e) => console.warn('Direct Apps Script doPost add_student notice:', e));
       }
 
+      // 2. Append-Only Archive to Firebase Firestore `students`
+      try {
+        await setDoc(doc(db, 'students', studentId), studentObj, { merge: true });
+      } catch (firestoreErr) {
+        console.warn('Direct Firestore student archive warning:', firestoreErr);
+      }
+
+      // 3. Write to backend API
+      const res = await fetch('/api/fund/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: adminPinInput, adminEmail, student: studentObj }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save student');
+
+      // 4. Re-fetch current data
       await fetchFundData();
       setSyncToast({ message: `Student ${studentData.name} saved successfully!`, type: 'success' });
     } catch (err: any) {
@@ -575,22 +542,27 @@ export default function App() {
     }
   };
 
-  // Delete Student: App -> Firebase -> Sheet
+  // Delete Student: Google Sheet FIRST -> Backend (STRICT: Never delete historical docs from Firestore)
   const handleDeleteStudent = async (student: Student) => {
     try {
-      // 1. Direct delete from Firebase Firestore
-      try {
-        if (student.id) {
-          await deleteDoc(doc(db, 'students', student.id));
-        }
-        if (student.roll) {
-          await deleteDoc(doc(db, 'students', student.roll));
-        }
-      } catch (firestoreErr) {
-        console.warn('Direct Firestore student delete warning:', firestoreErr);
+      // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
+      const webhookUrl = config?.googleSheetWebhookUrl;
+      if (webhookUrl && webhookUrl.includes('script.google.com')) {
+        fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            type: 'delete_student',
+            studentRoll: student.roll,
+          }),
+        }).catch((e) => console.warn('Direct Apps Script doPost delete_student notice:', e));
       }
 
-      // 2. Delete on backend API
+      // 2. STRICT RULE: NEVER delete historical documents from Firestore (Indestructible Append-Only Archive)
+      // The student is removed from the active Sheet/UI, but their historical document remains permanently archived in Firestore.
+
+      // 3. Delete on backend API (removes from active UI memory without deleting Firestore archive)
       const res = await fetch(`/api/fund/students/${encodeURIComponent(student.id || student.roll)}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -604,22 +576,9 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete student');
 
-      // 3. Keep sheet updated via direct Webhook doPost with CORS bypass & exact payload
-      const webhookUrl = config?.googleSheetWebhookUrl;
-      if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        fetch(webhookUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            type: 'delete_student',
-            studentRoll: student.roll,
-          }),
-        }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
-      }
-
+      // 4. Re-fetch current data
       await fetchFundData();
-      setSyncToast({ message: `Student ${student.name} (${student.roll}) deleted successfully!`, type: 'success' });
+      setSyncToast({ message: `Student ${student.name} (${student.roll}) removed from active sheet!`, type: 'success' });
     } catch (err: any) {
       alert('Error deleting student: ' + err.message);
       await fetchFundData();

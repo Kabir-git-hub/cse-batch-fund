@@ -206,20 +206,10 @@ async function syncAllToFirestore(db: DBStructure) {
   }
 }
 
-// Master Overwrite Firestore: deletes orphaned old test documents and updates latest collection docs
+// Master Overwrite Firestore: saves latest records as an Append-Only Archive without deleting old records
 async function overwriteFirestoreWithData(db: DBStructure) {
   if (isFirestoreQuotaExceeded) return;
   try {
-    const [existingStudentsSnap, existingExpensesSnap, existingReceiptsSnap] = await Promise.all([
-      getDocs(collection(firestoreDb, 'students')).catch(() => null),
-      getDocs(collection(firestoreDb, 'expenses')).catch(() => null),
-      getDocs(collection(firestoreDb, 'receipts')).catch(() => null),
-    ]);
-
-    const newStudentIds = new Set(db.students.map((s) => s.id));
-    const newExpenseIds = new Set(db.expenses.map((e) => e.id));
-    const newReceiptIds = new Set(db.receipts.map((r) => r.id));
-
     let batch = writeBatch(firestoreDb);
     let count = 0;
 
@@ -231,65 +221,32 @@ async function overwriteFirestoreWithData(db: DBStructure) {
       }
     };
 
-    // Delete removed/old test students
-    if (existingStudentsSnap) {
-      for (const docSnap of existingStudentsSnap.docs) {
-        if (!newStudentIds.has(docSnap.id)) {
-          batch.delete(docSnap.ref);
-          count++;
-          await commitBatchIfNeeded();
-        }
-      }
-    }
-
-    // Delete removed/old test expenses
-    if (existingExpensesSnap) {
-      for (const docSnap of existingExpensesSnap.docs) {
-        if (!newExpenseIds.has(docSnap.id)) {
-          batch.delete(docSnap.ref);
-          count++;
-          await commitBatchIfNeeded();
-        }
-      }
-    }
-
-    // Delete removed/old test receipts
-    if (existingReceiptsSnap) {
-      for (const docSnap of existingReceiptsSnap.docs) {
-        if (!newReceiptIds.has(docSnap.id)) {
-          batch.delete(docSnap.ref);
-          count++;
-          await commitBatchIfNeeded();
-        }
-      }
-    }
-
     // Write new config
-    batch.set(doc(firestoreDb, 'config', 'batch'), db.config);
+    batch.set(doc(firestoreDb, 'config', 'batch'), db.config, { merge: true });
     count++;
 
-    // Write students
+    // Write students (Append-Only)
     for (const student of db.students) {
       if (student.id) {
-        batch.set(doc(firestoreDb, 'students', student.id), student);
+        batch.set(doc(firestoreDb, 'students', student.id), student, { merge: true });
         count++;
         await commitBatchIfNeeded();
       }
     }
 
-    // Write expenses
+    // Write expenses (Append-Only)
     for (const expense of db.expenses) {
       if (expense.id) {
-        batch.set(doc(firestoreDb, 'expenses', expense.id), expense);
+        batch.set(doc(firestoreDb, 'expenses', expense.id), expense, { merge: true });
         count++;
         await commitBatchIfNeeded();
       }
     }
 
-    // Write receipts
+    // Write receipts (Append-Only)
     for (const receipt of db.receipts) {
       if (receipt.id) {
-        batch.set(doc(firestoreDb, 'receipts', receipt.id), receipt);
+        batch.set(doc(firestoreDb, 'receipts', receipt.id), receipt, { merge: true });
         count++;
         await commitBatchIfNeeded();
       }
@@ -298,11 +255,11 @@ async function overwriteFirestoreWithData(db: DBStructure) {
     if (count > 0) {
       await batch.commit();
     }
-    console.log('[Firestore Sync] Overwrite committed successfully to Firestore!');
+    console.log('[Firestore Archive] Append-only records archived successfully to Firestore!');
   } catch (err: any) {
     if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('Quota exceeded') || err?.code === 8) {
       isFirestoreQuotaExceeded = true;
-      console.warn('⚠️ Firestore write quota exceeded during master overwrite.');
+      console.warn('⚠️ Firestore write quota exceeded during append-only archive.');
     } else {
       console.error('Error in overwriteFirestoreWithData:', err);
     }
@@ -320,7 +277,7 @@ function loadDB(): DBStructure {
   };
 }
 
-// Save DB state to Firestore
+// Save DB state to Firestore (Append-Only)
 function saveDB(db: DBStructure) {
   cachedDb = db;
 
@@ -347,19 +304,10 @@ function saveFirestoreDoc(collectionName: string, docId: string, data: any) {
   });
 }
 
-// Helper to delete document directly from Firestore
+// Helper for Firestore Archive: STRICT RULE - NEVER delete historical documents from Firestore (Append-Only Archive)
 function deleteFirestoreDoc(collectionName: string, docId: string) {
-  if (!docId || isFirestoreQuotaExceeded) return;
-  deleteDoc(doc(firestoreDb, collectionName, docId)).catch((err: any) => {
-    if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('Quota exceeded') || err?.code === 8) {
-      isFirestoreQuotaExceeded = true;
-      console.warn(`⚠️ Firestore Quota Exceeded deleting doc ${docId} from ${collectionName}`);
-    } else if (err?.code === 'permission-denied' || err?.message?.includes('PERMISSION_DENIED')) {
-      console.warn(`⚠️ Firestore Permission Denied deleting doc ${docId} from ${collectionName}`);
-    } else {
-      console.error(`Error deleting doc ${docId} from Firestore collection ${collectionName}:`, err);
-    }
-  });
+  // Firestore acts strictly as an indestructible append-only archive. No deleteDoc is ever executed.
+  console.log(`[Append-Only Archive] Preserved historical document ${docId} in Firestore ${collectionName}`);
 }
 
 
