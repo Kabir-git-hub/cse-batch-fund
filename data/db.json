@@ -13,7 +13,7 @@
     "allowedAdminEmails": [
       "alaminkabbirrrr@gmail.com",
       "mrsalaminkabir@gmail.com",
-      "rajibsunny100@gmail.com"
+      "rajibsunny100@gmail.com",
     ],
     "adminPin": "1717",
     "bkashNumber": "01790853898",
@@ -516,22 +516,7 @@
       "roll": "2023331510",
       "name": "Md. Saadat Hossain"
     },
-    {
-      "id": "s_1786825091978",
-      "joinedMonth": "2025-01",
-      "status": "active",
-      "phone": "",
-      "name": "ssss",
-      "roll": "123123123"
-    },
-    {
-      "joinedMonth": "2025-01",
-      "phone": "",
-      "status": "active",
-      "name": "test",
-      "roll": "11111111111111111",
-      "id": "s_1786827252022"
-    },
+    
     {
       "phone": "",
       "id": "s_gs_1786822977257gg6",
