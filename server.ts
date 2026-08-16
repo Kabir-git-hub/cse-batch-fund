@@ -430,6 +430,15 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '10mb' }));
 
+  // Strict Anti-Caching Middleware for all API routes (prevents Vercel/proxy/browser ghost data)
+  app.use('/api', (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+    next();
+  });
+
   // Initialize Gemini AI SDK lazily for AI Assistant
   function getGeminiAI() {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -1337,14 +1346,15 @@ async function startServer() {
           ? jsonPayload.expenses
           : (jsonPayload.data?.expenses || []);
 
-        // Safety Check: If the fetched arrays from the sheet are completely empty (0 length) but Firestore/db currently has data,
-        // do NOT overwrite/wipe Firestore to prevent accidental data loss from an empty sheet.
+        // Safety Check: If the fetched arrays from the sheet are completely empty (0 length) and not forced, check whether to preserve
         if (
+          type !== 'force' &&
+          !directPayload &&
           incomingStudents.length === 0 &&
           incomingExpenses.length === 0 &&
           (db.students.length > 0 || db.expenses.length > 0)
         ) {
-          console.warn('[Master Sync Safety] Google Sheet returned 0 records while database has existing records. Preserving Firestore database to prevent accidental data loss.');
+          console.warn('[Master Sync Safety] Google Sheet returned 0 records. Preserving database unless forced.');
           return {
             success: true,
             safetyPreserved: true,

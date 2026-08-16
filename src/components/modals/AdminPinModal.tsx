@@ -122,7 +122,9 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
       // If popup blocked or popup closed or domain error, try Server OAuth fallback
       if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user' || err.code === 'auth/unauthorized-domain' || err.code === 'auth/operation-not-allowed') {
         try {
-          const res = await fetch('/api/auth/google/url');
+          const res = await fetch(`/api/auth/google/url?t=${new Date().getTime()}`, {
+            cache: 'no-store',
+          });
           const data = await res.json();
           if (data.configured && data.url) {
             const authWindow = window.open(

@@ -41,8 +41,9 @@ export const AiAssistantView: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/fund/ai-query', {
+      const response = await fetch(`/api/fund/ai-query?t=${new Date().getTime()}`, {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: promptToSend }),
       });

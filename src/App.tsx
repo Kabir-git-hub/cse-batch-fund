@@ -100,8 +100,9 @@ export default function App() {
         }
       }
 
-      const res = await fetch('/api/fund/admin/verify-email', {
+      const res = await fetch(`/api/fund/admin/verify-email?t=${new Date().getTime()}`, {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: emailToVerify, pin: pinToVerify, verifiedByGoogle }),
       });
@@ -159,8 +160,9 @@ export default function App() {
       // Attempt client-side GET request to webhook if available
       try {
         if (webhookUrl && webhookUrl.includes('script.google.com')) {
-          const directRes = await fetch(webhookUrl, {
+          const directRes = await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
             method: 'GET',
+            cache: 'no-store',
             headers: { Accept: 'application/json' },
           });
           if (directRes.ok) {
@@ -178,8 +180,9 @@ export default function App() {
         console.log('Client direct GET bypass, switching to server sync handler:', clientGetErr);
       }
 
-      const res = await fetch('/api/fund/sync-google-sheet', {
+      const res = await fetch(`/api/fund/sync-google-sheet?t=${new Date().getTime()}`, {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: webhookUrl || sheetUrl,
@@ -207,19 +210,17 @@ export default function App() {
     }
   };
 
-  // Real-time calculation whenever core collections update
+  // Real-time calculation whenever core collections update (calculates clean zero stats if empty)
   useEffect(() => {
-    if (students.length > 0 || receipts.length > 0 || expenses.length > 0) {
-      const { studentStatuses: calculatedStatuses, stats: calculatedStats, allTargetMonths: calculatedMonths } = calculateFundDetails(
-        config,
-        students,
-        receipts,
-        expenses
-      );
-      setStudentStatuses(calculatedStatuses);
-      setStats(calculatedStats);
-      setAllTargetMonths(calculatedMonths);
-    }
+    const { studentStatuses: calculatedStatuses, stats: calculatedStats, allTargetMonths: calculatedMonths } = calculateFundDetails(
+      config,
+      students,
+      receipts,
+      expenses
+    );
+    setStudentStatuses(calculatedStatuses);
+    setStats(calculatedStats);
+    setAllTargetMonths(calculatedMonths);
   }, [config, students, receipts, expenses]);
 
   // Load Data with Real-Time Firebase Firestore Admin Auth & Sheet-Driven Data Fetching
@@ -269,10 +270,17 @@ export default function App() {
     };
   }, []);
 
-  // Fetch from Server API (Source of Truth: Google Sheet Mirror)
+  // Fetch from Server API (Source of Truth: Google Sheet Mirror) - Strict anti-caching & timestamp cache buster
   const fetchFundData = async (retryCount = 0) => {
     try {
-      const res = await fetch('/api/fund/data');
+      const timestamp = new Date().getTime();
+      const res = await fetch(`/api/fund/data?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch fund data`);
       const data = await res.json();
 
@@ -293,9 +301,9 @@ export default function App() {
             }
           }
         }
-        if (data.students) setStudents(data.students);
-        if (data.receipts) setReceipts(data.receipts);
-        if (data.expenses) setExpenses(data.expenses);
+        setStudents(Array.isArray(data.students) ? data.students : []);
+        setReceipts(Array.isArray(data.receipts) ? data.receipts : []);
+        setExpenses(Array.isArray(data.expenses) ? data.expenses : []);
         if (data.studentStatuses) setStudentStatuses(data.studentStatuses);
         if (data.stats) setStats(data.stats);
         if (data.allTargetMonths) setAllTargetMonths(data.allTargetMonths);
@@ -353,9 +361,10 @@ export default function App() {
       // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload matching
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        fetch(webhookUrl, {
+        fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
           method: 'POST',
           mode: 'no-cors',
+          cache: 'no-store',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
             action: 'payment',
@@ -403,8 +412,9 @@ export default function App() {
       }
 
       // 4. Update backend API
-      const res = await fetch('/api/fund/payments', {
+      const res = await fetch(`/api/fund/payments?t=${new Date().getTime()}`, {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: adminPinInput, adminEmail, payment: receiptObj }),
       });
@@ -449,9 +459,10 @@ export default function App() {
       // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        fetch(webhookUrl, {
+        fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
           method: 'POST',
           mode: 'no-cors',
+          cache: 'no-store',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
             type: 'expense',
@@ -473,8 +484,9 @@ export default function App() {
       }
 
       // 3. Write to backend API
-      const res = await fetch('/api/fund/expenses', {
+      const res = await fetch(`/api/fund/expenses?t=${new Date().getTime()}`, {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: adminPinInput, adminEmail, expense: expenseObj }),
       });
@@ -505,9 +517,10 @@ export default function App() {
       // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        fetch(webhookUrl, {
+        fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
           method: 'POST',
           mode: 'no-cors',
+          cache: 'no-store',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
             type: 'add_student',
@@ -526,8 +539,9 @@ export default function App() {
       }
 
       // 3. Write to backend API
-      const res = await fetch('/api/fund/students', {
+      const res = await fetch(`/api/fund/students?t=${new Date().getTime()}`, {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: adminPinInput, adminEmail, student: studentObj }),
       });
@@ -548,9 +562,10 @@ export default function App() {
       // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        fetch(webhookUrl, {
+        fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
           method: 'POST',
           mode: 'no-cors',
+          cache: 'no-store',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
             type: 'delete_student',
@@ -563,8 +578,9 @@ export default function App() {
       // The student is removed from the active Sheet/UI, but their historical document remains permanently archived in Firestore.
 
       // 3. Delete on backend API (removes from active UI memory without deleting Firestore archive)
-      const res = await fetch(`/api/fund/students/${encodeURIComponent(student.id || student.roll)}`, {
+      const res = await fetch(`/api/fund/students/${encodeURIComponent(student.id || student.roll)}?t=${new Date().getTime()}`, {
         method: 'DELETE',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pin: adminPinInput,
@@ -587,8 +603,9 @@ export default function App() {
 
   // Sync Google Sheet URL
   const handleSyncGoogleSheet = async (url: string, type: 'payments' | 'expenses' | 'all') => {
-    const res = await fetch('/api/fund/sync-google-sheet', {
+    const res = await fetch(`/api/fund/sync-google-sheet?t=${new Date().getTime()}`, {
       method: 'POST',
+      cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, type }),
     });
@@ -600,8 +617,9 @@ export default function App() {
 
   // Save Config
   const handleSaveConfig = async (newConfig: Partial<BatchConfig>) => {
-    const res = await fetch('/api/fund/config', {
+    const res = await fetch(`/api/fund/config?t=${new Date().getTime()}`, {
       method: 'POST',
+      cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin: adminPinInput, adminEmail, newConfig }),
     });

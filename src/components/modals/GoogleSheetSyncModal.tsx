@@ -49,8 +49,9 @@ export const GoogleSheetSyncModal: React.FC<GoogleSheetSyncModalProps> = ({
     setAddingEmail(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/fund/admin/manage-emails', {
+      const res = await fetch(`/api/fund/admin/manage-emails?t=${new Date().getTime()}`, {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'add',
@@ -75,8 +76,9 @@ export const GoogleSheetSyncModal: React.FC<GoogleSheetSyncModalProps> = ({
     if (!confirm(`Are you sure you want to remove ${emailToRemove} from Admin access?`)) return;
     setMessage(null);
     try {
-      const res = await fetch('/api/fund/admin/manage-emails', {
+      const res = await fetch(`/api/fund/admin/manage-emails?t=${new Date().getTime()}`, {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'remove',
@@ -310,7 +312,10 @@ function doPost(e) {
         googleSheetPaymentsUrl: sheetUrl.trim(),
         googleSheetWebhookUrl: webhookUrl.trim(),
       });
-      const res = await fetch('/api/fund/test-webhook', { method: 'POST' });
+      const res = await fetch(`/api/fund/test-webhook?t=${new Date().getTime()}`, {
+        method: 'POST',
+        cache: 'no-store',
+      });
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Webhook test failed');
@@ -332,7 +337,10 @@ function doPost(e) {
         googleSheetPaymentsUrl: sheetUrl.trim(),
         googleSheetWebhookUrl: webhookUrl.trim(),
       });
-      const res = await fetch('/api/fund/push-to-google-sheet', { method: 'POST' });
+      const res = await fetch(`/api/fund/push-to-google-sheet?t=${new Date().getTime()}`, {
+        method: 'POST',
+        cache: 'no-store',
+      });
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Push failed');
