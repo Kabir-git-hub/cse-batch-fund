@@ -942,6 +942,21 @@ async function startServer() {
     saveDB(db);
     saveFirestoreDoc('receipts', newReceipt.id, newReceipt);
 
+    // Update student's totalPaid and status in Firestore and database
+    const studentTotalPaid = db.receipts
+      .filter((r) => r.studentRoll === payment.studentRoll || (student && r.studentId === student.id))
+      .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    const newStatus = (student?.status || 'active') as 'active' | 'inactive';
+
+    if (student) {
+      student.status = newStatus;
+      (student as any).totalPaid = studentTotalPaid;
+      saveFirestoreDoc('students', student.id, { ...student, totalPaid: studentTotalPaid, status: newStatus });
+      if (student.roll && student.roll !== student.id) {
+        saveFirestoreDoc('students', student.roll, { ...student, totalPaid: studentTotalPaid, status: newStatus });
+      }
+    }
+
     // Sync outwards to Google Sheet Webhook if configured
     syncToGoogleSheetWebhook('payment', {
       action: 'payment',
@@ -952,6 +967,7 @@ async function startServer() {
       studentName: newReceipt.studentName,
       name: newReceipt.studentName,
       amount: newReceipt.amount,
+      status: newStatus,
       monthsPaid: newReceipt.monthsPaid,
       month: (newReceipt.monthsPaid || []).join(', '),
       paymentDate: newReceipt.paymentDate,

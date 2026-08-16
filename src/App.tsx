@@ -18,7 +18,7 @@ import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundSt
 import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw } from 'lucide-react';
 import { SecLogo } from './components/SecLogo';
 import { calculateFundDetails } from './utils/fundCalculator';
-import { db, doc, collection, onSnapshot, getDoc, setDoc, deleteDoc } from './firebase';
+import { db, doc, collection, onSnapshot, getDoc, setDoc, updateDoc, deleteDoc } from './firebase';
 
 const defaultEmptyConfig: BatchConfig = {
   batchName: 'CSE Batch-17',
@@ -365,14 +365,18 @@ export default function App() {
     try {
       const receiptId = 'r_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
       const student = students.find((s) => s.roll === paymentData.studentRoll || s.id === paymentData.studentId);
-      const studentName = paymentData.studentName || student?.name || 'Student ' + paymentData.studentRoll;
+      const studentRoll = paymentData.studentRoll || student?.roll || '';
+      const studentName = paymentData.studentName || student?.name || 'Student ' + studentRoll;
+      const paymentAmount = Number(paymentData.amount) || 0;
+      const newStatus = (student?.status || 'active') as 'active' | 'inactive';
+
       const receiptObj: PaymentReceipt = {
         id: receiptId,
         receiptNo: paymentData.receiptNo || ('SEC17-PAY-' + Math.floor(1000 + Math.random() * 9000)),
-        studentId: student?.id || ('s_' + (paymentData.studentRoll || '').trim().replace(/[^0-9a-zA-Z]/g, '')),
-        studentRoll: paymentData.studentRoll,
+        studentId: student?.id || ('s_' + studentRoll.trim().replace(/[^0-9a-zA-Z]/g, '')),
+        studentRoll,
         studentName,
-        amount: Number(paymentData.amount) || 0,
+        amount: paymentAmount,
         monthsPaid: Array.isArray(paymentData.monthsPaid) ? paymentData.monthsPaid : (paymentData.monthsPaid ? [paymentData.monthsPaid] : []),
         paymentDate: paymentData.paymentDate || new Date().toISOString().split('T')[0],
         paymentMethod: paymentData.paymentMethod || 'bKash',
@@ -382,14 +386,44 @@ export default function App() {
         verified: true,
       };
 
-      // 1. Direct write to Firebase Firestore
+      // 1. Direct write receipt to Firebase Firestore `receipts` collection
       try {
         await setDoc(doc(db, 'receipts', receiptId), receiptObj);
       } catch (firestoreErr) {
         console.warn('Direct Firestore receipt write warning:', firestoreErr);
       }
 
-      // 2. Write to backend API (ensures server memory & Firestore consistency)
+      // 2. Immediately update the student's document in `students` collection (totalPaid & status)
+      const currentStudentTotal = receipts
+        .filter((r) => r.studentRoll === studentRoll || (student && r.studentId === student.id))
+        .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+      const newTotalPaid = currentStudentTotal + paymentAmount;
+      const studentDocId = student?.id || ('s_' + studentRoll.trim().replace(/[^0-9a-zA-Z]/g, ''));
+
+      try {
+        const studentDocRef = doc(db, 'students', studentDocId);
+        try {
+          await updateDoc(studentDocRef, {
+            totalPaid: newTotalPaid,
+            status: newStatus,
+          });
+        } catch (updateErr) {
+          // If updateDoc fails (e.g. document doesn't exist yet), set with merge
+          await setDoc(studentDocRef, {
+            id: studentDocId,
+            roll: studentRoll,
+            name: studentName,
+            phone: student?.phone || '',
+            status: newStatus,
+            joinedMonth: student?.joinedMonth || config?.startMonth || '2026-08',
+            totalPaid: newTotalPaid,
+          }, { merge: true });
+        }
+      } catch (studentErr) {
+        console.warn('Direct Firestore student update warning:', studentErr);
+      }
+
+      // 3. Write to backend API (ensures server memory & persistent state consistency)
       const res = await fetch('/api/fund/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -398,14 +432,18 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to record payment');
 
-      // 3. Keep sheet updated via direct Webhook doPost if configured
+      // 4. Trigger Google Apps Script Webhook directly via browser with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
         fetch(webhookUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'payment', ...receiptObj }),
           mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            roll: studentRoll,
+            amount: paymentAmount,
+            status: newStatus,
+          }),
         }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
       }
 
@@ -424,14 +462,21 @@ export default function App() {
   const handleAddExpense = async (expenseData: any) => {
     try {
       const expenseId = expenseData.id || ('e_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
+      const voucherNo = expenseData.voucherNo || ('SEC17-EXP-' + Math.floor(100 + Math.random() * 900));
+      const title = expenseData.title || '';
+      const category = expenseData.category || 'Other';
+      const amount = Number(expenseData.amount) || 0;
+      const date = expenseData.date || new Date().toISOString().split('T')[0];
+      const spentBy = expenseData.spentBy || 'Batch Admin';
+
       const expenseObj: Expense = {
         id: expenseId,
-        voucherNo: expenseData.voucherNo || ('SEC17-EXP-' + Math.floor(100 + Math.random() * 900)),
-        title: expenseData.title,
-        amount: Number(expenseData.amount) || 0,
-        category: expenseData.category || 'Other',
-        date: expenseData.date || new Date().toISOString().split('T')[0],
-        spentBy: expenseData.spentBy || 'Batch Admin',
+        voucherNo,
+        title,
+        amount,
+        category,
+        date,
+        spentBy,
         referenceDocUrl: expenseData.referenceDocUrl || '',
         notes: expenseData.notes || '',
       };
@@ -452,14 +497,22 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to add expense');
 
-      // 3. Keep sheet updated via direct Webhook doPost if configured
+      // 3. Keep sheet updated via direct Webhook doPost with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
         fetch(webhookUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'expense', ...expenseObj }),
           mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            type: 'expense',
+            voucherNo: expenseObj.voucherNo || expenseObj.id,
+            title: expenseObj.title,
+            category: expenseObj.category,
+            amount: expenseObj.amount,
+            date: expenseObj.date,
+            spentBy: expenseObj.spentBy,
+          }),
         }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
       }
 
@@ -499,20 +552,19 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save student');
 
-      // 3. Keep sheet updated via direct Webhook doPost if configured
+      // 3. Keep sheet updated via direct Webhook doPost with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
         fetch(webhookUrl, {
           method: 'POST',
+          mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
-            action: 'add_student',
             type: 'add_student',
             studentRoll: studentObj.roll,
             name: studentObj.name,
             phone: studentObj.phone,
           }),
-          mode: 'no-cors',
         }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
       }
 
@@ -530,6 +582,9 @@ export default function App() {
       try {
         if (student.id) {
           await deleteDoc(doc(db, 'students', student.id));
+        }
+        if (student.roll) {
+          await deleteDoc(doc(db, 'students', student.roll));
         }
       } catch (firestoreErr) {
         console.warn('Direct Firestore student delete warning:', firestoreErr);
@@ -549,18 +604,17 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete student');
 
-      // 3. Keep sheet updated via direct Webhook doPost if configured
+      // 3. Keep sheet updated via direct Webhook doPost with CORS bypass & exact payload
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
         fetch(webhookUrl, {
           method: 'POST',
+          mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
-            action: 'delete_student',
             type: 'delete_student',
             studentRoll: student.roll,
           }),
-          mode: 'no-cors',
         }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
       }
 
