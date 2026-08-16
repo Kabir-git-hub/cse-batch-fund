@@ -1,12 +1,9 @@
 import express from 'express';
 import path from 'path';
-import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
 import Papa from 'papaparse';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc, getDocs, collection, deleteDoc, writeBatch } from 'firebase/firestore';
-import { initialConfig, initialStudents, initialReceipts, initialExpenses } from './src/data/defaultData.js';
-import { PRIMARY_ADMIN_EMAIL, INITIAL_ALLOWED_ADMIN_EMAILS } from './src/config/adminConfig.js';
 import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './src/types.js';
 
 const firebaseConfig = {
@@ -21,7 +18,6 @@ const firebaseConfig = {
 };
 
 const PORT = 3000;
-const DB_FILE = path.join(process.cwd(), 'data', 'db.json');
 
 // Initialize Firebase App and Firestore for server-side persistence
 const firebaseApp = initializeApp(firebaseConfig);
@@ -34,70 +30,93 @@ interface DBStructure {
   expenses: Expense[];
 }
 
+const defaultEmptyConfig: BatchConfig = {
+  batchName: 'CSE Batch-17',
+  institution: 'Sylhet Engineering College',
+  monthlyFee: 50,
+  startMonth: '2026-08',
+  managerName: 'Md. Rajib Hossain Sunny (CR)',
+  contactPhone: '01790853898',
+  bkashNumber: '01790853898',
+  nagadNumber: '01790853898',
+  adminPin: '1717',
+  allowedAdminEmails: [],
+  googleSheetPaymentsUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0',
+  googleSheetExpensesUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=503096906#gid=503096906',
+  googleSheetWebhookUrl: 'https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec',
+  lastSyncTime: new Date().toISOString()
+};
+
 // In-memory cache for fast server responses
 let cachedDb: DBStructure | null = null;
 let isFirestoreLoaded = false;
 let isFirestoreQuotaExceeded = false;
 
-// Async function to load or seed Firebase Firestore
+// Async function to load strictly from Firebase Firestore
 async function loadDBAsync(): Promise<DBStructure> {
-  // First load from local DB_FILE if available for fast boot
-  let localDbFromFile: DBStructure | null = null;
-  try {
-    if (fs.existsSync(DB_FILE)) {
-      const fileData = fs.readFileSync(DB_FILE, 'utf-8');
-      localDbFromFile = JSON.parse(fileData);
-      if (localDbFromFile && Array.isArray(localDbFromFile.students)) {
-        cachedDb = localDbFromFile;
-      }
-    }
-  } catch (e) {
-    console.error('Error reading local db.json:', e);
-  }
-
-  if (isFirestoreQuotaExceeded) {
-    if (cachedDb) return cachedDb;
+  if (isFirestoreQuotaExceeded && cachedDb) {
+    return cachedDb;
   }
   try {
-    const configSnap = await getDoc(doc(firestoreDb, 'config', 'batch'));
-    const studentsSnap = await getDocs(collection(firestoreDb, 'students'));
-    const receiptsSnap = await getDocs(collection(firestoreDb, 'receipts'));
-    const expensesSnap = await getDocs(collection(firestoreDb, 'expenses'));
+    const [configSnap, studentsSnap, receiptsSnap, expensesSnap, adminsSnap] = await Promise.all([
+      getDoc(doc(firestoreDb, 'config', 'batch')),
+      getDocs(collection(firestoreDb, 'students')),
+      getDocs(collection(firestoreDb, 'receipts')),
+      getDocs(collection(firestoreDb, 'expenses')),
+      getDocs(collection(firestoreDb, 'admins')),
+    ]);
 
-    let config: BatchConfig = configSnap.exists() ? (configSnap.data() as BatchConfig) : (localDbFromFile?.config || { ...initialConfig });
+    let config: BatchConfig = configSnap.exists()
+      ? (configSnap.data() as BatchConfig)
+      : { ...defaultEmptyConfig };
+
     let students: Student[] = studentsSnap.docs.map((d) => d.data() as Student);
     let receipts: PaymentReceipt[] = receiptsSnap.docs.map((d) => d.data() as PaymentReceipt);
     let expenses: Expense[] = expensesSnap.docs.map((d) => d.data() as Expense);
 
-    // Merge any student from localDbFromFile that might not be in Firestore yet
-    if (localDbFromFile && Array.isArray(localDbFromFile.students)) {
-      for (const s of localDbFromFile.students) {
-        if (!students.some((existing) => existing.id === s.id || existing.roll === s.roll)) {
-          students.push(s);
-          saveFirestoreDoc('students', s.id, s);
-        }
+    // Sync admin emails from admins collection
+    const adminEmailsFromCollection = adminsSnap.docs.map((d) => {
+      const data = d.data();
+      return (data.email || d.id || '').trim().toLowerCase();
+    }).filter(Boolean);
+
+    if (!config.allowedAdminEmails) {
+      config.allowedAdminEmails = [];
+    }
+
+    // Merge existing admins
+    for (const email of adminEmailsFromCollection) {
+      if (!config.allowedAdminEmails.some((e) => e.trim().toLowerCase() === email)) {
+        config.allowedAdminEmails.push(email);
+      }
+    }
+
+    // Ensure admins in config are saved to admins collection
+    for (const email of config.allowedAdminEmails) {
+      const clean = email.trim().toLowerCase();
+      if (clean && !adminEmailsFromCollection.includes(clean)) {
+        saveFirestoreDoc('admins', clean, {
+          email: clean,
+          role: 'admin',
+          addedAt: new Date().toISOString(),
+        });
       }
     }
 
     let dirty = false;
 
-    // Clean up any legacy dummy expense (e.g. title 'ws') from Firestore & memory
+    // Clean up any legacy dummy expense from Firestore & memory
     for (const exp of expenses) {
-      if (exp.title === 'ws' || exp.id.includes('1786824706078') || exp.voucherNo === 'SEC17-EXP-897') {
+      if (exp.title === 'ws' || exp.id?.includes('1786824706078') || exp.voucherNo === 'SEC17-EXP-897') {
         deleteFirestoreDoc('expenses', exp.id);
         dirty = true;
       }
     }
-    expenses = expenses.filter((e) => e.title !== 'ws' && !e.id.includes('1786824706078') && e.voucherNo !== 'SEC17-EXP-897');
+    expenses = expenses.filter((e) => e.title !== 'ws' && !e.id?.includes('1786824706078') && e.voucherNo !== 'SEC17-EXP-897');
 
-    // If both Firestore and localDb were completely empty, seed initial data from defaultData
-    if (!configSnap.exists() && students.length === 0) {
+    if (!configSnap.exists()) {
       console.log('Initializing database config in Firebase Firestore...');
-      config = { ...initialConfig };
-      students = [...initialStudents];
-      receipts = [...initialReceipts];
-      expenses = [...initialExpenses];
-
+      config = { ...defaultEmptyConfig };
       const seedDb: DBStructure = { config, students, receipts, expenses };
       await syncAllToFirestore(seedDb);
     }
@@ -119,38 +138,10 @@ async function loadDBAsync(): Promise<DBStructure> {
       dirty = true;
     }
 
-    if (config.googleSheetPaymentsUrl && (config.googleSheetPaymentsUrl.includes('Sheet2') || config.googleSheetPaymentsUrl.includes('Sheet%202') || config.googleSheetPaymentsUrl.includes('gid=503096906'))) {
-      config.googleSheetPaymentsUrl = 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0';
-      dirty = true;
-    }
-
-    if (!config.googleSheetExpensesUrl || config.googleSheetExpensesUrl === config.googleSheetPaymentsUrl) {
-      config.googleSheetExpensesUrl = 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/gviz/tq?tqx=out:csv&sheet=Sheet2';
-      dirty = true;
-    }
-
     const prevStudentCount = students.length;
     students = students.filter((s) => !s.roll.startsWith('SEC17-EXP'));
     if (students.length !== prevStudentCount) {
       receipts = receipts.filter((r) => students.some((s) => s.id === r.studentId || s.roll === r.studentRoll));
-      dirty = true;
-    }
-
-    if (!config.allowedAdminEmails) {
-      config.allowedAdminEmails = [...INITIAL_ALLOWED_ADMIN_EMAILS];
-      dirty = true;
-    } else {
-      for (const email of INITIAL_ALLOWED_ADMIN_EMAILS) {
-        if (!config.allowedAdminEmails.some((e) => e.trim().toLowerCase() === email.trim().toLowerCase())) {
-          config.allowedAdminEmails.push(email);
-          dirty = true;
-        }
-      }
-      config.allowedAdminEmails = config.allowedAdminEmails.map((e) => e.trim()).filter(Boolean);
-    }
-
-    if (config.deletedExpenseVouchers && config.deletedExpenseVouchers.length > 0) {
-      config.deletedExpenseVouchers = [];
       dirty = true;
     }
 
@@ -166,16 +157,16 @@ async function loadDBAsync(): Promise<DBStructure> {
   } catch (err: any) {
     if (err?.code === 'resource-exhausted' || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('Quota exceeded') || err?.code === 8) {
       isFirestoreQuotaExceeded = true;
-      console.warn('⚠️ Firestore quota exceeded on database load. Serving data from in-memory/local state.');
+      console.warn('⚠️ Firestore quota exceeded on database load. Serving data from in-memory state.');
     } else {
-      console.error('Error loading DB from Firestore, falling back to local cached state:', err);
+      console.error('Error loading DB from Firestore:', err);
     }
     if (cachedDb) return cachedDb;
     const defaultDb: DBStructure = {
-      config: { ...initialConfig },
-      students: [...initialStudents],
-      receipts: [...initialReceipts],
-      expenses: [...initialExpenses],
+      config: { ...defaultEmptyConfig },
+      students: [],
+      receipts: [],
+      expenses: [],
     };
     cachedDb = defaultDb;
     return defaultDb;
@@ -344,30 +335,18 @@ async function overwriteFirestoreWithData(db: DBStructure) {
   }
 }
 
-// Synchronous getter for in-memory DB state with local file fallback
+// Synchronous getter for in-memory DB state
 function loadDB(): DBStructure {
   if (cachedDb) return cachedDb;
-  try {
-    if (fs.existsSync(DB_FILE)) {
-      const fileData = fs.readFileSync(DB_FILE, 'utf-8');
-      const parsed = JSON.parse(fileData);
-      if (parsed && Array.isArray(parsed.students)) {
-        cachedDb = parsed;
-        return parsed;
-      }
-    }
-  } catch (e) {
-    // Ignore and fallback
-  }
   return {
-    config: { ...initialConfig },
-    students: [...initialStudents],
-    receipts: [...initialReceipts],
-    expenses: [...initialExpenses],
+    config: { ...defaultEmptyConfig },
+    students: [],
+    receipts: [],
+    expenses: [],
   };
 }
 
-// Save DB state to Firestore and attempt local db.json save gracefully
+// Save DB state to Firestore
 function saveDB(db: DBStructure) {
   cachedDb = db;
 
@@ -376,17 +355,6 @@ function saveDB(db: DBStructure) {
     syncAllToFirestore(db).catch((err) => {
       console.error('Async Firestore sync error:', err);
     });
-  }
-
-  // Try saving to local db.json if directory is writable (gracefully fails on Vercel read-only filesystem)
-  try {
-    const dataDir = path.dirname(DB_FILE);
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
-  } catch (err) {
-    // Read-only filesystem on Vercel, ignore file write error
   }
 }
 
@@ -729,7 +697,7 @@ async function startServer() {
   });
 
   // Verify Admin Email Endpoint
-  app.post('/api/fund/admin/verify-email', (req, res) => {
+  app.post('/api/fund/admin/verify-email', async (req, res) => {
     try {
       const { email, pin, verifiedByGoogle } = req.body || {};
       const db = loadDB();
@@ -742,7 +710,21 @@ async function startServer() {
         return res.json({ success: false, error: 'Please enter a valid Gmail address.' });
       }
 
-      const isAllowed = allowed.includes(emailToVerify);
+      let isAllowed = allowed.includes(emailToVerify);
+      if (!isAllowed) {
+        try {
+          const adminDoc = await getDoc(doc(firestoreDb, 'admins', emailToVerify));
+          if (adminDoc.exists()) {
+            isAllowed = true;
+            if (!db.config.allowedAdminEmails.includes(emailToVerify)) {
+              db.config.allowedAdminEmails.push(emailToVerify);
+            }
+          }
+        } catch (fsErr) {
+          console.warn('Firestore admin verification fallback check:', fsErr);
+        }
+      }
+
       if (!isAllowed) {
         return res.json({
           success: false,
@@ -794,13 +776,16 @@ async function startServer() {
         return res.status(400).json({ error: 'This email is already an authorized Admin.' });
       }
       db.config.allowedAdminEmails.push(targetEmail);
+      saveFirestoreDoc('admins', targetEmail, {
+        email: targetEmail,
+        role: 'admin',
+        addedAt: new Date().toISOString()
+      });
       saveDB(db);
       return res.json({ success: true, allowedAdminEmails: db.config.allowedAdminEmails, message: `Added ${targetEmail} to Authorized Admins!` });
     } else if (action === 'remove') {
-      if (targetEmail === PRIMARY_ADMIN_EMAIL.toLowerCase()) {
-        return res.status(400).json({ error: `Cannot remove primary super-admin email (${PRIMARY_ADMIN_EMAIL}).` });
-      }
       db.config.allowedAdminEmails = db.config.allowedAdminEmails.filter((e) => e.toLowerCase() !== targetEmail);
+      deleteFirestoreDoc('admins', targetEmail);
       saveDB(db);
       return res.json({ success: true, allowedAdminEmails: db.config.allowedAdminEmails, message: `Removed ${targetEmail} from Admin list.` });
     }

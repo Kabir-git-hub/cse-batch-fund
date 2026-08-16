@@ -1,6 +1,20 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import {
+  getFirestore,
+  doc,
+  collection,
+  onSnapshot,
+  getDoc,
+  getDocs,
+  setDoc,
+  deleteDoc,
+  writeBatch,
+  query,
+  where,
+  getDocFromServer,
+  Unsubscribe,
+} from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -9,19 +23,19 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error) {
-      if (error.message.includes('the client is offline')) {
-        console.error('Please check your Firebase configuration.');
-      } else if (error.message.includes('PERMISSION_DENIED') || (error as any).code === 'permission-denied') {
-        console.warn('Firebase Firestore PERMISSION_DENIED: Please enable read/write rules in your Firebase Console for project sec-cse-batch-17-fund.');
-      } else if (error.message.includes('RESOURCE_EXHAUSTED') || (error as any).code === 'resource-exhausted') {
-        console.warn('Firebase Firestore RESOURCE_EXHAUSTED: Daily quota or write rate limit exceeded.');
-      }
-    }
-  }
-}
-export { signInWithPopup, signOut };
+export {
+  doc,
+  collection,
+  onSnapshot,
+  getDoc,
+  getDocs,
+  setDoc,
+  deleteDoc,
+  writeBatch,
+  query,
+  where,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+};
+export type { User, Unsubscribe };

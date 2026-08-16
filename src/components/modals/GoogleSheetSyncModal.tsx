@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { FileSpreadsheet, X, RefreshCw, CheckCircle2, Copy, ExternalLink, ShieldCheck, Zap, AlertCircle, UserPlus, Trash2, Shield, Mail } from 'lucide-react';
 import { BatchConfig } from '../../types';
-import { PRIMARY_ADMIN_EMAIL, INITIAL_ALLOWED_ADMIN_EMAILS } from '../../config/adminConfig';
 
 interface GoogleSheetSyncModalProps {
   isOpen: boolean;
@@ -57,7 +56,7 @@ export const GoogleSheetSyncModal: React.FC<GoogleSheetSyncModalProps> = ({
           action: 'add',
           email: newAdminEmail.trim(),
           pin: adminPin,
-          requesterEmail: localStorage.getItem('sec_admin_email') || PRIMARY_ADMIN_EMAIL,
+          requesterEmail: localStorage.getItem('sec_admin_email') || '',
         }),
       });
       const data = await res.json();
@@ -83,7 +82,7 @@ export const GoogleSheetSyncModal: React.FC<GoogleSheetSyncModalProps> = ({
           action: 'remove',
           email: emailToRemove,
           pin: adminPin,
-          requesterEmail: localStorage.getItem('sec_admin_email') || PRIMARY_ADMIN_EMAIL,
+          requesterEmail: localStorage.getItem('sec_admin_email') || '',
         }),
       });
       const data = await res.json();

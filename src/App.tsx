@@ -15,10 +15,27 @@ import { AdminPinModal } from './components/modals/AdminPinModal';
 import { GoogleSheetSyncModal } from './components/modals/GoogleSheetSyncModal';
 
 import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './types';
-import { initialConfig } from './data/defaultData';
-import { PRIMARY_ADMIN_EMAIL } from './config/adminConfig';
 import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw } from 'lucide-react';
 import { SecLogo } from './components/SecLogo';
+import { calculateFundDetails } from './utils/fundCalculator';
+import { db, doc, collection, onSnapshot } from './firebase';
+
+const defaultEmptyConfig: BatchConfig = {
+  batchName: 'CSE Batch-17',
+  institution: 'Sylhet Engineering College',
+  monthlyFee: 50,
+  startMonth: '2026-08',
+  managerName: 'Md. Rajib Hossain Sunny (CR)',
+  contactPhone: '01790853898',
+  bkashNumber: '01790853898',
+  nagadNumber: '01790853898',
+  adminPin: '1717',
+  allowedAdminEmails: [],
+  googleSheetPaymentsUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0',
+  googleSheetExpensesUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=503096906#gid=503096906',
+  googleSheetWebhookUrl: 'https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec',
+  lastSyncTime: new Date().toISOString()
+};
 
 const defaultStats: FundStats = {
   totalCollected: 0,
@@ -34,7 +51,7 @@ const defaultStats: FundStats = {
 };
 
 export default function App() {
-  const [config, setConfig] = useState<BatchConfig>(initialConfig);
+  const [config, setConfig] = useState<BatchConfig>(defaultEmptyConfig);
   const [students, setStudents] = useState<Student[]>([]);
   const [receipts, setReceipts] = useState<PaymentReceipt[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -64,7 +81,7 @@ export default function App() {
   // Admin / Manager State
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [adminPinInput, setAdminPinInput] = useState<string>('1717');
-  const [adminEmail, setAdminEmail] = useState<string>(() => localStorage.getItem('sec_admin_email') || PRIMARY_ADMIN_EMAIL);
+  const [adminEmail, setAdminEmail] = useState<string>(() => localStorage.getItem('sec_admin_email') || '');
 
   // Verify Admin Email Handler
   const handleVerifyEmail = async (emailToVerify: string, pinToVerify?: string, verifiedByGoogle?: boolean): Promise<boolean> => {
@@ -176,7 +193,90 @@ export default function App() {
     }
   };
 
-  // Load Data from Server API with resilient exponential backoff
+  // Real-time calculation whenever core collections update
+  useEffect(() => {
+    if (students.length > 0 || receipts.length > 0 || expenses.length > 0) {
+      const { studentStatuses: calculatedStatuses, stats: calculatedStats, allTargetMonths: calculatedMonths } = calculateFundDetails(
+        config,
+        students,
+        receipts,
+        expenses
+      );
+      setStudentStatuses(calculatedStatuses);
+      setStats(calculatedStats);
+      setAllTargetMonths(calculatedMonths);
+    }
+  }, [config, students, receipts, expenses]);
+
+  // Load Data with Real-Time Firebase Firestore Listeners
+  useEffect(() => {
+    let unsubs: (() => void)[] = [];
+
+    try {
+      // 1. Real-time Config listener
+      const unsubConfig = onSnapshot(
+        doc(db, 'config', 'batch'),
+        (snap) => {
+          if (snap.exists()) {
+            setConfig(snap.data() as BatchConfig);
+          }
+        },
+        (err) => console.warn('Firestore config onSnapshot error:', err)
+      );
+      unsubs.push(unsubConfig);
+
+      // 2. Real-time Students listener
+      const unsubStudents = onSnapshot(
+        collection(db, 'students'),
+        (snap) => {
+          const stds = snap.docs.map((d) => d.data() as Student);
+          if (stds.length > 0) {
+            setStudents(stds);
+          }
+          setLoading(false);
+        },
+        (err) => console.warn('Firestore students onSnapshot error:', err)
+      );
+      unsubs.push(unsubStudents);
+
+      // 3. Real-time Receipts listener
+      const unsubReceipts = onSnapshot(
+        collection(db, 'receipts'),
+        (snap) => {
+          const recs = snap.docs.map((d) => d.data() as PaymentReceipt);
+          setReceipts(recs);
+        },
+        (err) => console.warn('Firestore receipts onSnapshot error:', err)
+      );
+      unsubs.push(unsubReceipts);
+
+      // 4. Real-time Expenses listener
+      const unsubExpenses = onSnapshot(
+        collection(db, 'expenses'),
+        (snap) => {
+          const exps = snap.docs.map((d) => d.data() as Expense);
+          setExpenses(exps);
+        },
+        (err) => console.warn('Firestore expenses onSnapshot error:', err)
+      );
+      unsubs.push(unsubExpenses);
+    } catch (listenerErr) {
+      console.warn('Realtime onSnapshot setup failed, falling back to server endpoints:', listenerErr);
+    }
+
+    // Also fetch initial data from backend API
+    fetchFundData();
+
+    return () => {
+      unsubs.forEach((unsub) => {
+        try {
+          unsub();
+        } catch (e) {}
+      });
+    };
+  }, []);
+
+  // Fetch from Server API fallback
   const fetchFundData = async (retryCount = 0) => {
     try {
       const res = await fetch('/api/fund/data');
@@ -196,41 +296,14 @@ export default function App() {
       setLoading(false);
     } catch (err: any) {
       console.warn('fetchFundData error (attempt ' + retryCount + '):', err);
-      if (retryCount < 5) {
+      if (retryCount < 4) {
         const delay = Math.min(1000 * Math.pow(1.5, retryCount), 4000);
         setTimeout(() => fetchFundData(retryCount + 1), delay);
       } else {
-        setError(err.message || 'Failed to fetch fund data');
         setLoading(false);
       }
     }
   };
-
-  useEffect(() => {
-    fetchFundData();
-    const interval = setInterval(() => {
-      fetch('/api/fund/data')
-        .then((res) => {
-          if (!res.ok) throw new Error('Poll failed');
-          return res.json();
-        })
-        .then((data) => {
-          if (data && data.config) {
-            setConfig(data.config);
-            setStudents(data.students || []);
-            setReceipts(data.receipts || []);
-            setExpenses(data.expenses || []);
-            setStudentStatuses(data.studentStatuses || []);
-            setStats(data.stats || defaultStats);
-            setAllTargetMonths(data.allTargetMonths || []);
-            setError(null);
-          }
-        })
-        .catch(() => {});
-    }, 8000);
-
-    return () => clearInterval(interval);
-  }, []);
 
   // Manager Pin Handler
   const handleVerifyPin = (pin: string): boolean => {

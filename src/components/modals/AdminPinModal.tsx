@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Shield, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { auth, googleProvider, signInWithPopup } from '../../firebase';
+import { auth, googleProvider, signInWithPopup, db, doc, getDoc, collection, getDocs } from '../../firebase';
 
 interface AdminPinModalProps {
   isOpen: boolean;
@@ -90,9 +90,26 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
         throw new Error('Google Sign-In failed: No email address returned.');
       }
 
-      // Verify email with system backend
+      // Direct Firestore check against admins collection
+      let isFirestoreAdmin = false;
+      const cleanEmail = userEmail.trim().toLowerCase();
+      try {
+        const adminDoc = await getDoc(doc(db, 'admins', cleanEmail));
+        if (adminDoc.exists()) {
+          isFirestoreAdmin = true;
+        } else {
+          const adminsSnap = await getDocs(collection(db, 'admins'));
+          if (adminsSnap.docs.some(d => d.id.toLowerCase() === cleanEmail || (d.data()?.email && d.data().email.toLowerCase() === cleanEmail))) {
+            isFirestoreAdmin = true;
+          }
+        }
+      } catch (fsErr) {
+        console.warn('Direct Firestore admin lookup warning:', fsErr);
+      }
+
+      // Verify email with system backend & Firestore
       const ok = await onVerifyEmail(userEmail, undefined, true);
-      if (ok) {
+      if (ok || isFirestoreAdmin) {
         setSuccessMsg(`Google Account Verified! Access Granted for ${userEmail}`);
         setTimeout(() => {
           onClose();

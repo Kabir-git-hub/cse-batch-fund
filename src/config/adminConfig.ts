@@ -1,10 +1,12 @@
-// Centralized Admin Email Configuration
-// To change the main Admin Gmail address, simply update PRIMARY_ADMIN_EMAIL below.
+// Dynamic Admin Configuration (No hardcoded credentials)
+// All authorized admin emails and credentials are now dynamically queried from Firestore `admins` collection.
 
-export const PRIMARY_ADMIN_EMAIL = 'alaminkabbirrrr@gmail.com';
+export interface AdminUser {
+  email: string;
+  name?: string;
+  role?: 'superadmin' | 'admin' | 'viewer';
+  addedAt?: string;
+  addedBy?: string;
+}
 
-export const INITIAL_ALLOWED_ADMIN_EMAILS: string[] = [
-  PRIMARY_ADMIN_EMAIL,
-  'rajibsunny100@gmail.com',
-  'mrsalaminkabir@gmail.com',
-];
+export const DEFAULT_ADMIN_COLLECTION = 'admins';

@@ -16,7 +16,6 @@ import {
   Calendar
 } from 'lucide-react';
 import { BatchConfig, FundStats } from '../types';
-import { PRIMARY_ADMIN_EMAIL } from '../config/adminConfig';
 
 interface NavbarProps {
   config: BatchConfig;
