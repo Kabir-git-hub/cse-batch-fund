@@ -813,10 +813,18 @@ async function startServer() {
 
     // Google Sheet Webhook Sync (Add Student)
     syncToGoogleSheetWebhook('add_student', {
+      action: 'add_student',
       type: 'add_student',
       studentRoll: savedStudent.roll,
+      roll: savedStudent.roll,
+      rollNo: savedStudent.roll,
+      studentName: savedStudent.name,
       name: savedStudent.name,
       phone: savedStudent.phone,
+      mobile: savedStudent.phone,
+      contact: savedStudent.phone,
+      status: savedStudent.status,
+      joinedMonth: savedStudent.joinedMonth,
     });
 
     const details = calculateFundDetails(db);
@@ -865,8 +873,12 @@ async function startServer() {
 
     // Google Sheet Webhook Sync (Delete Student)
     syncToGoogleSheetWebhook('delete_student', {
+      action: 'delete_student',
       type: 'delete_student',
       studentRoll: targetStudent.roll,
+      roll: targetStudent.roll,
+      studentName: targetStudent.name,
+      name: targetStudent.name,
     });
 
     const details = calculateFundDetails(db);
@@ -928,15 +940,28 @@ async function startServer() {
 
     db.receipts.unshift(newReceipt);
     saveDB(db);
+    saveFirestoreDoc('receipts', newReceipt.id, newReceipt);
 
     // Sync outwards to Google Sheet Webhook if configured
     syncToGoogleSheetWebhook('payment', {
+      action: 'payment',
+      type: 'payment',
+      receiptNo: newReceipt.receiptNo,
       studentRoll: newReceipt.studentRoll,
+      roll: newReceipt.studentRoll,
       studentName: newReceipt.studentName,
+      name: newReceipt.studentName,
       amount: newReceipt.amount,
       monthsPaid: newReceipt.monthsPaid,
+      month: (newReceipt.monthsPaid || []).join(', '),
       paymentDate: newReceipt.paymentDate,
+      date: newReceipt.paymentDate,
+      paymentMethod: newReceipt.paymentMethod,
+      method: newReceipt.paymentMethod,
+      transactionRef: newReceipt.transactionRef,
+      trxId: newReceipt.transactionRef,
       collectorName: newReceipt.collectorName,
+      collectedBy: newReceipt.collectorName,
       notes: newReceipt.notes,
     });
 
@@ -960,9 +985,15 @@ async function startServer() {
     if (deletedReceipt) {
       deleteFirestoreDoc('receipts', deletedReceipt.id);
       syncToGoogleSheetWebhook('delete_payment', {
+        action: 'delete_payment',
+        type: 'delete_payment',
+        receiptNo: deletedReceipt.receiptNo,
         studentRoll: deletedReceipt.studentRoll,
+        roll: deletedReceipt.studentRoll,
         studentName: deletedReceipt.studentName,
+        name: deletedReceipt.studentName,
         amount: deletedReceipt.amount,
+        monthsPaid: deletedReceipt.monthsPaid,
       });
     }
 
@@ -998,16 +1029,23 @@ async function startServer() {
 
     db.expenses.unshift(newExpense);
     saveDB(db);
+    saveFirestoreDoc('expenses', newExpense.id, newExpense);
 
     // Sync outwards to Google Sheet Webhook if configured
     syncToGoogleSheetWebhook('expense', {
+      action: 'expense',
+      type: 'expense',
       voucherNo: newExpense.voucherNo,
+      voucher: newExpense.voucherNo,
       title: newExpense.title,
+      description: newExpense.title,
       category: newExpense.category,
       amount: newExpense.amount,
       date: newExpense.date,
       spentBy: newExpense.spentBy,
+      paidBy: newExpense.spentBy,
       notes: newExpense.notes,
+      referenceDocUrl: newExpense.referenceDocUrl,
     });
 
     const details = calculateFundDetails(db);
@@ -1036,8 +1074,10 @@ async function startServer() {
       saveDB(db);
 
       syncToGoogleSheetWebhook('delete_expense', {
+        action: 'delete_expense',
         type: 'delete_expense',
         voucherNo: targetExpense.voucherNo,
+        voucher: targetExpense.voucherNo,
         title: targetExpense.title,
         amount: targetExpense.amount,
       });
@@ -1048,8 +1088,10 @@ async function startServer() {
         saveDB(db);
 
         syncToGoogleSheetWebhook('delete_expense', {
+          action: 'delete_expense',
           type: 'delete_expense',
           voucherNo: id,
+          voucher: id,
         });
       }
     }
@@ -1331,6 +1373,25 @@ async function startServer() {
           ? jsonPayload.expenses
           : (jsonPayload.data?.expenses || []);
 
+        // Safety Check: If the fetched arrays from the sheet are completely empty (0 length) but Firestore/db currently has data,
+        // do NOT overwrite/wipe Firestore to prevent accidental data loss from an empty sheet.
+        if (
+          incomingStudents.length === 0 &&
+          incomingExpenses.length === 0 &&
+          (db.students.length > 0 || db.expenses.length > 0)
+        ) {
+          console.warn('[Master Sync Safety] Google Sheet returned 0 records while database has existing records. Preserving Firestore database to prevent accidental data loss.');
+          return {
+            success: true,
+            safetyPreserved: true,
+            message: 'Google Sheet returned 0 records. Preserved existing database to prevent accidental data wipe.',
+            studentsCount: db.students.length,
+            expensesCount: db.expenses.length,
+            paymentsImported: 0,
+            expensesImported: 0,
+          };
+        }
+
         const parsedStudents: Student[] = [];
         const parsedReceipts: PaymentReceipt[] = [];
 
@@ -1407,11 +1468,13 @@ async function startServer() {
           });
         }
 
-        if (parsedStudents.length > 0) {
+        if (Array.isArray(incomingStudents)) {
           db.students = parsedStudents;
           db.receipts = parsedReceipts;
         }
-        db.expenses = parsedExpenses;
+        if (Array.isArray(incomingExpenses)) {
+          db.expenses = parsedExpenses;
+        }
         db.config.lastSyncTime = new Date().toISOString();
 
         await overwriteFirestoreWithData(db);
@@ -1419,7 +1482,7 @@ async function startServer() {
 
         return {
           success: true,
-          message: `Master Google Sheet sync complete! Updated ${parsedStudents.length} students and ${parsedExpenses.length} expenses.`,
+          message: `Master Google Sheet sync complete! Mirrored ${parsedStudents.length} students and ${parsedExpenses.length} expenses.`,
           studentsCount: parsedStudents.length,
           expensesCount: parsedExpenses.length,
           paymentsImported: parsedReceipts.length,
@@ -1879,6 +1942,7 @@ async function startServer() {
     }
 
     db.config.lastSyncTime = new Date().toISOString();
+    await overwriteFirestoreWithData(db);
     saveDB(db);
 
     if (syncError && totalPaymentsImported === 0 && totalExpensesImported === 0) {
@@ -1896,15 +1960,29 @@ async function startServer() {
     }
   }
 
-  // Sheet Webhook Endpoint (Primary trigger from Google Apps Script onEdit/onChange)
+  // Sheet Webhook Endpoint (Primary trigger from Google Apps Script onEdit/onChange/doGet/doPost)
   app.all('/api/fund/sheet-webhook', async (req, res) => {
     try {
-      const url = (req.body?.url || req.query?.url) as string | undefined;
-      const type = (req.body?.type || req.query?.type || 'force') as 'payments' | 'expenses' | 'all' | 'force';
-      const result = await performGoogleSheetSyncInternal(url, type);
-      res.json(result);
+      const payload = req.body || {};
+      console.log('[Sheet Webhook] Trigger received from Google Apps Script:', payload?.event || 'sheet_modified');
+
+      const db = loadDB();
+      const webhookUrl = (payload.url || req.query?.url || db.config.googleSheetWebhookUrl || 'https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec') as string;
+
+      let directPayload: any = null;
+      if (payload && (Array.isArray(payload.students) || Array.isArray(payload.expenses) || (payload.data && (Array.isArray(payload.data.students) || Array.isArray(payload.data.expenses))))) {
+        directPayload = payload;
+      }
+
+      const result = await performGoogleSheetSyncInternal(webhookUrl, 'force', directPayload);
+      res.json({
+        success: true,
+        event: payload?.event || 'sheet_modified',
+        timestamp: new Date().toISOString(),
+        ...result,
+      });
     } catch (err: any) {
-      console.error('Webhook sync error:', err);
+      console.error('[Sheet Webhook] Processing error:', err);
       res.status(500).json({ success: false, error: err.message || 'Webhook processing failed' });
     }
   });

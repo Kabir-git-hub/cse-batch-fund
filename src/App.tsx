@@ -18,7 +18,7 @@ import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundSt
 import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw } from 'lucide-react';
 import { SecLogo } from './components/SecLogo';
 import { calculateFundDetails } from './utils/fundCalculator';
-import { db, doc, collection, onSnapshot, getDoc } from './firebase';
+import { db, doc, collection, onSnapshot, getDoc, setDoc, deleteDoc } from './firebase';
 
 const defaultEmptyConfig: BatchConfig = {
   batchName: 'CSE Batch-17',
@@ -360,20 +360,58 @@ export default function App() {
     return false;
   };
 
-  // Submit Payment Receipt
+  // Submit Payment Receipt: App -> Firebase -> Sheet
   const handleAddPayment = async (paymentData: any) => {
     try {
+      const receiptId = 'r_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+      const student = students.find((s) => s.roll === paymentData.studentRoll || s.id === paymentData.studentId);
+      const studentName = paymentData.studentName || student?.name || 'Student ' + paymentData.studentRoll;
+      const receiptObj: PaymentReceipt = {
+        id: receiptId,
+        receiptNo: paymentData.receiptNo || ('SEC17-PAY-' + Math.floor(1000 + Math.random() * 9000)),
+        studentId: student?.id || ('s_' + (paymentData.studentRoll || '').trim().replace(/[^0-9a-zA-Z]/g, '')),
+        studentRoll: paymentData.studentRoll,
+        studentName,
+        amount: Number(paymentData.amount) || 0,
+        monthsPaid: Array.isArray(paymentData.monthsPaid) ? paymentData.monthsPaid : (paymentData.monthsPaid ? [paymentData.monthsPaid] : []),
+        paymentDate: paymentData.paymentDate || new Date().toISOString().split('T')[0],
+        paymentMethod: paymentData.paymentMethod || 'bKash',
+        transactionRef: paymentData.transactionRef || '',
+        collectorName: paymentData.collectorName || 'Batch Admin',
+        notes: paymentData.notes || '',
+        verified: true,
+      };
+
+      // 1. Direct write to Firebase Firestore
+      try {
+        await setDoc(doc(db, 'receipts', receiptId), receiptObj);
+      } catch (firestoreErr) {
+        console.warn('Direct Firestore receipt write warning:', firestoreErr);
+      }
+
+      // 2. Write to backend API (ensures server memory & Firestore consistency)
       const res = await fetch('/api/fund/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: adminPinInput, adminEmail, payment: paymentData }),
+        body: JSON.stringify({ pin: adminPinInput, adminEmail, payment: receiptObj }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to record payment');
 
+      // 3. Keep sheet updated via direct Webhook doPost if configured
+      const webhookUrl = config?.googleSheetWebhookUrl;
+      if (webhookUrl && webhookUrl.includes('script.google.com')) {
+        fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'payment', ...receiptObj }),
+          mode: 'no-cors',
+        }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
+      }
+
       await fetchFundData();
-      if (data.receipt) {
-        setSelectedReceipt(data.receipt);
+      if (data.receipt || receiptObj) {
+        setSelectedReceipt(data.receipt || receiptObj);
         setSelectedExpense(null);
         setIsReceiptModalOpen(true);
       }
@@ -382,16 +420,48 @@ export default function App() {
     }
   };
 
-  // Submit Expense
+  // Submit Expense: App -> Firebase -> Sheet
   const handleAddExpense = async (expenseData: any) => {
     try {
+      const expenseId = expenseData.id || ('e_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
+      const expenseObj: Expense = {
+        id: expenseId,
+        voucherNo: expenseData.voucherNo || ('SEC17-EXP-' + Math.floor(100 + Math.random() * 900)),
+        title: expenseData.title,
+        amount: Number(expenseData.amount) || 0,
+        category: expenseData.category || 'Other',
+        date: expenseData.date || new Date().toISOString().split('T')[0],
+        spentBy: expenseData.spentBy || 'Batch Admin',
+        referenceDocUrl: expenseData.referenceDocUrl || '',
+        notes: expenseData.notes || '',
+      };
+
+      // 1. Direct write to Firebase Firestore
+      try {
+        await setDoc(doc(db, 'expenses', expenseId), expenseObj);
+      } catch (firestoreErr) {
+        console.warn('Direct Firestore expense write warning:', firestoreErr);
+      }
+
+      // 2. Write to backend API
       const res = await fetch('/api/fund/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: adminPinInput, adminEmail, expense: expenseData }),
+        body: JSON.stringify({ pin: adminPinInput, adminEmail, expense: expenseObj }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to add expense');
+
+      // 3. Keep sheet updated via direct Webhook doPost if configured
+      const webhookUrl = config?.googleSheetWebhookUrl;
+      if (webhookUrl && webhookUrl.includes('script.google.com')) {
+        fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'expense', ...expenseObj }),
+          mode: 'no-cors',
+        }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
+      }
 
       await fetchFundData();
     } catch (err: any) {
@@ -399,16 +469,52 @@ export default function App() {
     }
   };
 
-  // Add / Edit Student
+  // Add / Edit Student: App -> Firebase -> Sheet
   const handleAddStudent = async (studentData: any) => {
     try {
+      const cleanRollVal = String(studentData.roll || '').trim().replace(/[^0-9a-zA-Z]/g, '');
+      const studentId = studentData.id || ('s_' + cleanRollVal);
+      const studentObj: Student = {
+        id: studentId,
+        roll: studentData.roll,
+        name: studentData.name,
+        phone: studentData.phone || '',
+        status: studentData.status || 'active',
+        joinedMonth: studentData.joinedMonth || config?.startMonth || '2026-08',
+      };
+
+      // 1. Direct write to Firebase Firestore
+      try {
+        await setDoc(doc(db, 'students', studentId), studentObj);
+      } catch (firestoreErr) {
+        console.warn('Direct Firestore student write warning:', firestoreErr);
+      }
+
+      // 2. Write to backend API
       const res = await fetch('/api/fund/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: adminPinInput, adminEmail, student: studentData }),
+        body: JSON.stringify({ pin: adminPinInput, adminEmail, student: studentObj }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save student');
+
+      // 3. Keep sheet updated via direct Webhook doPost if configured
+      const webhookUrl = config?.googleSheetWebhookUrl;
+      if (webhookUrl && webhookUrl.includes('script.google.com')) {
+        fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'add_student',
+            type: 'add_student',
+            studentRoll: studentObj.roll,
+            name: studentObj.name,
+            phone: studentObj.phone,
+          }),
+          mode: 'no-cors',
+        }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
+      }
 
       await fetchFundData();
       setSyncToast({ message: `Student ${studentData.name} saved successfully!`, type: 'success' });
@@ -417,9 +523,19 @@ export default function App() {
     }
   };
 
-  // Delete Student
+  // Delete Student: App -> Firebase -> Sheet
   const handleDeleteStudent = async (student: Student) => {
     try {
+      // 1. Direct delete from Firebase Firestore
+      try {
+        if (student.id) {
+          await deleteDoc(doc(db, 'students', student.id));
+        }
+      } catch (firestoreErr) {
+        console.warn('Direct Firestore student delete warning:', firestoreErr);
+      }
+
+      // 2. Delete on backend API
       const res = await fetch(`/api/fund/students/${encodeURIComponent(student.id || student.roll)}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -432,6 +548,21 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete student');
+
+      // 3. Keep sheet updated via direct Webhook doPost if configured
+      const webhookUrl = config?.googleSheetWebhookUrl;
+      if (webhookUrl && webhookUrl.includes('script.google.com')) {
+        fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'delete_student',
+            type: 'delete_student',
+            studentRoll: student.roll,
+          }),
+          mode: 'no-cors',
+        }).catch((e) => console.warn('Direct Apps Script doPost notice:', e));
+      }
 
       await fetchFundData();
       setSyncToast({ message: `Student ${student.name} (${student.roll}) deleted successfully!`, type: 'success' });
@@ -516,8 +647,6 @@ export default function App() {
         }}
         onOpenExpenseModal={() => setIsExpenseModalOpen(true)}
         onOpenSheetSyncModal={() => setIsSheetSyncModalOpen(true)}
-        onQuickSheetSync={handleQuickSheetSync}
-        isSyncingSheet={isSyncingSheet}
         liveDateStr={liveDateStr}
         liveTimeStr={liveTimeStr}
       />

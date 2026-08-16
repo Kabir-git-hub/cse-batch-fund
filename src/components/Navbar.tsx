@@ -8,11 +8,9 @@ import {
   Users, 
   CalendarDays, 
   Wallet, 
-  RefreshCw, 
   Menu, 
   X,
   LogOut,
-  Sparkles,
   Calendar
 } from 'lucide-react';
 import { BatchConfig, FundStats } from '../types';
@@ -28,8 +26,6 @@ interface NavbarProps {
   onOpenPaymentModal: () => void;
   onOpenExpenseModal: () => void;
   onOpenSheetSyncModal: () => void;
-  onQuickSheetSync?: () => void;
-  isSyncingSheet?: boolean;
   liveDateStr?: string;
   liveTimeStr?: string;
 }
@@ -44,10 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogoutAdmin,
   onOpenPaymentModal,
   onOpenExpenseModal,
-  onQuickSheetSync,
-  isSyncingSheet,
   liveDateStr,
-  liveTimeStr,
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -115,17 +108,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Desktop Action Buttons */}
             {isAdmin ? (
               <div className="hidden sm:flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={onQuickSheetSync}
-                  disabled={isSyncingSheet}
-                  className="h-9 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
-                  title="Sync with Google Sheet"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheet ? 'animate-spin text-teal-600' : 'text-teal-600'}`} />
-                  <span>{isSyncingSheet ? 'Syncing...' : 'Sheet Sync'}</span>
-                </button>
-
                 <button
                   type="button"
                   onClick={onOpenPaymentModal}
@@ -208,20 +190,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             );
           })}
-
-          {isAdmin && (
-            <div className="ml-auto py-2">
-              <button
-                type="button"
-                onClick={onQuickSheetSync}
-                disabled={isSyncingSheet}
-                className="h-8 px-3 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200/80 text-[11px] font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3 h-3 ${isSyncingSheet ? 'animate-spin text-teal-600' : 'text-teal-600'}`} />
-                <span>{isSyncingSheet ? 'Syncing...' : 'Quick Sync'}</span>
-              </button>
-            </div>
-          )}
         </div>
       </nav>
 
@@ -250,7 +218,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             })}
           </div>
 
-          {/* Mobile Admin Quick Actions */}
+          {/* Mobile Admin Actions */}
           <div className="pt-3 border-t border-slate-100 space-y-2">
             {isAdmin ? (
               <div className="grid grid-cols-2 gap-2">
@@ -273,18 +241,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className="h-9 px-3 rounded-xl bg-rose-600 text-white text-xs font-bold flex items-center justify-center gap-1.5"
                 >
                   <Plus className="w-3.5 h-3.5" /> Expense
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    onQuickSheetSync && onQuickSheetSync();
-                  }}
-                  disabled={isSyncingSheet}
-                  className="col-span-2 h-9 px-3 rounded-xl bg-teal-50 text-teal-800 border border-teal-200 text-xs font-bold flex items-center justify-center gap-1.5"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheet ? 'animate-spin' : ''}`} />
-                  <span>{isSyncingSheet ? 'Syncing...' : 'Sync Google Sheet'}</span>
                 </button>
                 <button
                   type="button"
