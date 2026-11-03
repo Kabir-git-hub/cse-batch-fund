@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Search, CheckCircle2, AlertTriangle, AlertCircle, UserPlus, Trash2, X } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Search, CheckCircle2, AlertTriangle, AlertCircle, UserPlus, Trash2, X, CreditCard, Users, Sparkles } from 'lucide-react';
 import { StudentFundStatus, Student } from '../types';
+import { compareStudentStatuses } from '../utils/studentSorter';
 
 interface StudentRosterViewProps {
   studentStatuses: StudentFundStatus[];
@@ -23,12 +24,36 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Keyboard shortcut to focus search: '/' or 'Ctrl+K' / 'Cmd+K', and Escape to clear
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) && document.activeElement !== searchInputRef.current) {
+        // Only trigger if not already typing in another input/textarea
+        const tag = (document.activeElement?.tagName || '').toLowerCase();
+        if (tag !== 'input' && tag !== 'textarea') {
+          e.preventDefault();
+          searchInputRef.current?.focus();
+        }
+      } else if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
+        setSearchTerm('');
+        searchInputRef.current?.blur();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
 
   const filteredStudents = studentStatuses.filter((item) => {
-    const matchesSearch =
-      item.student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.student.roll.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.student.phone.includes(searchTerm);
+    const nameMatch = item.student.name.toLowerCase().includes(normalizedSearch);
+    const rollMatch = item.student.roll.toLowerCase().includes(normalizedSearch);
+    const phoneMatch = item.student.phone ? item.student.phone.includes(normalizedSearch) : false;
+
+    const matchesSearch = normalizedSearch === '' || nameMatch || rollMatch || phoneMatch;
 
     if (statusFilter === 'paid_up') return matchesSearch && item.status === 'paid_up';
     if (statusFilter === 'due_1_month') return matchesSearch && item.status === 'due_1_month';
@@ -52,75 +77,141 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Search & Filter Header Bar */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
-        
-        {/* Search input */}
-        <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search student roll, name, phone..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all placeholder:text-slate-400"
-          />
-        </div>
+      {/* Search & Filter Header Bar at the top of StudentRosterView */}
+      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-sm space-y-3.5">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          
+          {/* High-Accessibility Search Bar */}
+          <div className="relative flex-1 group">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-emerald-600 transition-colors">
+              <Search className="w-4 h-4" />
+            </div>
+            
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search by student name or roll number (e.g. '2023331546' or 'Al Amin')..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-24 py-2.5 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-xl text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-inner"
+              aria-label="Filter students by name or roll number"
+            />
 
-        {/* Filter buttons & Admin Add Student */}
-        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto justify-between md:justify-end">
-          <div className="flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200/50">
-            <button
-              onClick={() => setStatusFilter('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                statusFilter === 'all'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              All ({studentStatuses.length})
-            </button>
-            <button
-              onClick={() => setStatusFilter('paid_up')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                statusFilter === 'paid_up'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-emerald-700 hover:bg-emerald-50'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" /> Up-to-Date
-            </button>
-            <button
-              onClick={() => setStatusFilter('due_1_month')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                statusFilter === 'due_1_month'
-                  ? 'bg-amber-500 text-white shadow-xs'
-                  : 'text-amber-700 hover:bg-amber-50'
-              }`}
-            >
-              <AlertTriangle className="w-3.5 h-3.5" /> 1 Mo Due
-            </button>
-            <button
-              onClick={() => setStatusFilter('overdue')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                statusFilter === 'overdue'
-                  ? 'bg-rose-600 text-white shadow-xs'
-                  : 'text-rose-700 hover:bg-rose-50'
-              }`}
-            >
-              <AlertCircle className="w-3.5 h-3.5" /> Overdue
-            </button>
+            <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center gap-1.5">
+              {searchTerm ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm('');
+                    searchInputRef.current?.focus();
+                  }}
+                  title="Clear search"
+                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              ) : (
+                <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono font-semibold text-slate-400 bg-white border border-slate-200 rounded shadow-2xs">
+                  /
+                </span>
+              )}
+
+              {searchTerm && (
+                <span className="text-[11px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg">
+                  {filteredStudents.length} found
+                </span>
+              )}
+            </div>
           </div>
 
-          {isAdmin && (
-            <button
-              onClick={onOpenAddStudentModal}
-              className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all shadow-xs cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4 text-emerald-400" /> Add Student
-            </button>
-          )}
+          {/* Status Filters & Admin Add Button */}
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 justify-between lg:justify-end">
+            <div className="inline-flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 text-xs overflow-x-auto max-w-full">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  statusFilter === 'all'
+                    ? 'bg-white text-slate-900 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                All ({studentStatuses.length})
+              </button>
+              <button
+                onClick={() => setStatusFilter('paid_up')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap ${
+                  statusFilter === 'paid_up'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'text-emerald-700 hover:bg-emerald-50'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" /> Up-to-Date
+              </button>
+              <button
+                onClick={() => setStatusFilter('due_1_month')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap ${
+                  statusFilter === 'due_1_month'
+                    ? 'bg-amber-500 text-white shadow-2xs'
+                    : 'text-amber-700 hover:bg-amber-50'
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5" /> 1 Mo Due
+              </button>
+              <button
+                onClick={() => setStatusFilter('overdue')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap ${
+                  statusFilter === 'overdue'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'text-rose-700 hover:bg-rose-50'
+                }`}
+              >
+                <AlertCircle className="w-3.5 h-3.5" /> Overdue
+              </button>
+            </div>
+
+            {isAdmin && (
+              <button
+                onClick={onOpenAddStudentModal}
+                className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all shadow-xs cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4 text-emerald-400" />
+                <span>Add Student</span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Live Filter Summary Bar */}
+        {(searchTerm || statusFilter !== 'all') && (
+          <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span>
+                Showing <strong className="text-slate-800">{filteredStudents.length}</strong> of{' '}
+                <span className="font-semibold">{studentStatuses.length}</span> students
+              </span>
+              {searchTerm && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono text-[11px]">
+                  Keyword: "{searchTerm}"
+                </span>
+              )}
+              {statusFilter !== 'all' && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-semibold capitalize">
+                  Status: {statusFilter.replace('_', ' ')}
+                </span>
+              )}
+            </div>
+
+            <button
+              onClick={() => {
+                setSearchTerm('');
+                setStatusFilter('all');
+              }}
+              className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 underline cursor-pointer hover:no-underline"
+            >
+              Reset all filters
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Roster Table */}
@@ -138,7 +229,7 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {[...filteredStudents]
-                .sort((a, b) => Number(a.student.roll) - Number(b.student.roll))
+                .sort(compareStudentStatuses)
                 .map((item) => (
                 <tr
                   key={item.student.id}
@@ -146,9 +237,16 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
                   onClick={() => onSelectStudent(item)}
                 >
                   <td className="py-3.5 px-4 sm:px-6 font-mono font-bold text-slate-900">
-                    <span className="bg-slate-100 text-slate-800 px-2.5 py-1 rounded-md border border-slate-200/60 text-xs">
-                      {item.student.roll}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {item.student.slNo !== undefined && item.student.slNo !== null && (
+                        <span className="text-[11px] font-bold text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/50">
+                          #{item.student.slNo}
+                        </span>
+                      )}
+                      <span className="bg-slate-100 text-slate-800 px-2.5 py-1 rounded-md border border-slate-200/60 text-xs">
+                        {item.student.roll}
+                      </span>
+                    </div>
                   </td>
                   <td className="py-3.5 px-4 sm:px-6">
                     <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5 flex-wrap">
@@ -181,25 +279,40 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
 
                     {item.status === 'overdue' && (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200/80">
-                        <AlertCircle className="w-3.5 h-3.5 text-rose-600" /> {item.totalMonthsDue} Months Due (৳{item.dueAmount})
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600" /> {item.totalMonthsDue} Months Due ({item.dueAmount} TK)
                       </span>
                     )}
                   </td>
 
                   {isAdmin && (
                     <td className="py-3.5 px-4 sm:px-6 text-right" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setStudentToDelete(item.student);
-                        }}
-                        title={`Delete student ${item.student.name}`}
-                        aria-label={`Delete student ${item.student.name}`}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-full transition-colors cursor-pointer inline-flex items-center justify-center border border-transparent hover:border-red-200"
-                      >
-                        <Trash2 className="w-4 h-4 text-red-500 hover:text-red-700" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenPaymentModalForStudent(item.student);
+                          }}
+                          title={`Record payment for ${item.student.name}`}
+                          className="px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/90 border border-emerald-200/80 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                        >
+                          <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="hidden sm:inline">Pay</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setStudentToDelete(item.student);
+                          }}
+                          title={`Delete student ${item.student.name}`}
+                          aria-label={`Delete student ${item.student.name}`}
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center border border-transparent hover:border-red-200"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500 hover:text-red-700" />
+                        </button>
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -207,8 +320,33 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
 
               {filteredStudents.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 5 : 4} className="py-12 text-center text-slate-400 text-sm font-medium">
-                    No students match your search criteria.
+                  <td colSpan={isAdmin ? 5 : 4} className="py-16 text-center">
+                    <div className="max-w-xs mx-auto space-y-3">
+                      <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
+                        <Search className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">No students found</h4>
+                        <p className="text-xs text-slate-400 mt-1">
+                          {searchTerm
+                            ? `No student name or roll matched "${searchTerm}".`
+                            : 'No students match the current status filter.'}
+                        </p>
+                      </div>
+                      {(searchTerm || statusFilter !== 'all') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchTerm('');
+                            setStatusFilter('all');
+                            searchInputRef.current?.focus();
+                          }}
+                          className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-xl border border-emerald-200 transition-colors cursor-pointer"
+                        >
+                          Clear filters
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )}

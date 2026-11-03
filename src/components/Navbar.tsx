@@ -46,7 +46,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navLinks = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'students', label: 'Students (64)', icon: Users },
+    { id: 'students', label: 'Students', icon: Users },
     { id: 'matrix', label: 'Contribution Tracker', icon: CalendarDays },
     { id: 'expenses', label: 'Expense Audit', icon: Receipt },
   ];
@@ -65,7 +65,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Brand & Institution Info */}
           <div className="flex items-center gap-3 shrink-0">
             <img
-              src="https://i.postimg.cc/htGh5FFC/540271483-122132074802921166-1834135919526935801-n.jpg"
+              src="https://i.postimg.cc/t4j1CvLJ/Whats-App-Image-2026-11-03-at-6-25-22-PM.jpg"
               alt="অসীমতট Logo"
               referrerPolicy="no-referrer"
               className="w-12 h-12 md:w-14 md:h-14 rounded-full object-cover shadow-sm border border-gray-200 shrink-0"

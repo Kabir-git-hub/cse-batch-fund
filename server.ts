@@ -5,6 +5,7 @@ import Papa from 'papaparse';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc, getDocs, collection, deleteDoc, writeBatch } from 'firebase/firestore';
 import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './src/types.js';
+import { compareStudents } from './src/utils/studentSorter.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDUvV7k7j4TfDVFWlN-TNmqsvxSN6hvxFU",
@@ -43,7 +44,7 @@ const defaultEmptyConfig: BatchConfig = {
   allowedAdminEmails: [],
   googleSheetPaymentsUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0',
   googleSheetExpensesUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=503096906#gid=503096906',
-  googleSheetWebhookUrl: 'https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec',
+  googleSheetWebhookUrl: 'https://script.google.com/macros/s/AKfycbz3LZfvJSVokHI5BNv1mSXtBX2EtsP_mIVb1Mp-01sVm1kLHbcEt1VMIt4-7tvifYq3/exec',
   lastSyncTime: new Date().toISOString()
 };
 
@@ -119,6 +120,7 @@ async function loadDBAsync(): Promise<DBStructure> {
       dirty = true;
     }
 
+    students.sort(compareStudents);
     const loadedDb: DBStructure = { config, students, receipts, expenses };
     cachedDb = loadedDb;
     isFirestoreLoaded = true;
@@ -304,10 +306,15 @@ function saveFirestoreDoc(collectionName: string, docId: string, data: any) {
   });
 }
 
-// Helper for Firestore Archive: STRICT RULE - NEVER delete historical documents from Firestore (Append-Only Archive)
-function deleteFirestoreDoc(collectionName: string, docId: string) {
-  // Firestore acts strictly as an indestructible append-only archive. No deleteDoc is ever executed.
-  console.log(`[Append-Only Archive] Preserved historical document ${docId} in Firestore ${collectionName}`);
+// Helper to delete document in Firebase Firestore (Firebase-First architecture)
+async function deleteFirestoreDoc(collectionName: string, docId: string) {
+  if (!docId) return;
+  try {
+    await deleteDoc(doc(firestoreDb, collectionName, docId));
+    console.log(`[Firebase Delete] Successfully executed deleteDoc on ${collectionName}/${docId}`);
+  } catch (err: any) {
+    console.error(`Error executing deleteDoc on ${collectionName}/${docId}:`, err);
+  }
 }
 
 
@@ -388,6 +395,9 @@ function calculateFundDetails(db: DBStructure) {
     };
   });
 
+  // Sort studentStatuses strictly according to custom student sorting rules
+  studentStatuses.sort((a, b) => compareStudents(a.student, b.student));
+
   // Calculate totals
   const totalCollected = db.receipts.reduce((acc, r) => acc + Number(r.amount || 0), 0);
   const totalSpent = db.expenses.reduce((acc, e) => acc + Number(e.amount || 0), 0);
@@ -406,6 +416,25 @@ function calculateFundDetails(db: DBStructure) {
   const thisMonthExpensesList = db.expenses.filter((e) => e.date && e.date.startsWith(currentMonth));
   const thisMonthSpent = thisMonthExpensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0);
 
+  // Count unique active students who made AT LEAST ONE payment in current/recent month
+  const activeStudentRolls = new Set(
+    db.students
+      .filter((s) => s.status === 'active')
+      .map((s) => s.roll.trim().toLowerCase())
+  );
+  const currentMonthPaidStudentRolls = new Set<string>();
+  db.receipts.forEach((r) => {
+    const isDateMatch = Boolean(r.paymentDate && r.paymentDate.startsWith(currentMonth));
+    const isMonthMatch = Array.isArray(r.monthsPaid) && r.monthsPaid.includes(currentMonth);
+    if (isDateMatch || isMonthMatch) {
+      const roll = (r.studentRoll || r.studentId || '').trim().toLowerCase();
+      if (roll && (activeStudentRolls.size === 0 || activeStudentRolls.has(roll))) {
+        currentMonthPaidStudentRolls.add(roll);
+      }
+    }
+  });
+  const currentMonthPaidCount = currentMonthPaidStudentRolls.size;
+
   const stats: FundStats = {
     totalCollected,
     totalSpent,
@@ -417,6 +446,7 @@ function calculateFundDetails(db: DBStructure) {
     currentMonth,
     thisMonthCollected,
     thisMonthSpent,
+    currentMonthPaidCount,
   };
 
   return { studentStatuses, stats, allTargetMonths };
@@ -722,6 +752,58 @@ async function startServer() {
     });
   });
 
+  // 1.1 Sheet Summary Endpoint: Direct doGet proxy from Google Apps Script Webhook (Permanent Truth Ledger)
+  app.get('/api/fund/sheet-summary', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    const db = loadDB();
+    const webhookUrl = db.config?.googleSheetWebhookUrl || 'https://script.google.com/macros/s/AKfycbz3LZfvJSVokHI5BNv1mSXtBX2EtsP_mIVb1Mp-01sVm1kLHbcEt1VMIt4-7tvifYq3/exec';
+
+    try {
+      const timestamp = Date.now();
+      const u = `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${timestamp}`;
+      const response = await fetch(u, {
+        method: 'GET',
+        headers: {
+          'Cache-Control': 'no-store',
+          'Accept': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const text = await response.text();
+        try {
+          const json = JSON.parse(text);
+          const totalFund = Number(json.totalCollected ?? json.totalFund ?? 0);
+          const totalExpense = Number(json.totalExpense ?? json.totalSpent ?? 0);
+          const netBalance = Number(json.netBalance ?? (totalFund - totalExpense));
+          return res.json({
+            success: true,
+            totalFund,
+            totalExpense,
+            netBalance,
+          });
+        } catch (jsonErr) {
+          console.warn('Sheet summary response was not JSON:', text.slice(0, 100));
+        }
+      }
+    } catch (fetchErr) {
+      console.warn('Failed to fetch from Google Sheet doGet webhook:', fetchErr);
+    }
+
+    // Fallback if Sheet webhook is unreachable
+    const { stats } = calculateFundDetails(db);
+    return res.json({
+      success: true,
+      totalFund: stats.totalCollected,
+      totalExpense: stats.totalSpent,
+      netBalance: stats.netBalance,
+      isFallback: true,
+    });
+  });
+
   // 2. Add / Edit Student (Manager mode)
   app.post('/api/fund/students', async (req, res) => {
     const { student } = req.body;
@@ -825,18 +907,8 @@ async function startServer() {
       (r) => r.studentId !== targetStudent.id && r.studentRoll !== targetStudent.roll
     );
 
-    // Save updated DB state
+    // Save updated DB state (Firebase-First: deleteDoc was executed on Firebase; Sheet remains indestructible append-only ledger)
     saveDB(db);
-
-    // Google Sheet Webhook Sync (Delete Student)
-    syncToGoogleSheetWebhook('delete_student', {
-      action: 'delete_student',
-      type: 'delete_student',
-      studentRoll: targetStudent.roll,
-      roll: targetStudent.roll,
-      studentName: targetStudent.name,
-      name: targetStudent.name,
-    });
 
     const details = calculateFundDetails(db);
     res.json({
@@ -1939,7 +2011,128 @@ async function startServer() {
   app.all('/api/fund/sheet-webhook', async (req, res) => {
     try {
       const payload = req.body || {};
-      console.log('[Sheet Webhook] Trigger received from Google Apps Script:', payload?.event || 'sheet_modified');
+      const payloadType = payload?.type || payload?.action || payload?.event;
+      console.log('[Sheet Webhook] Trigger received from Google Apps Script:', payloadType || 'sheet_modified');
+
+      // 1. Automated Sheet3 Student Roster Synchronization
+      if (payloadType === 'sync_students_from_sheet3') {
+        const incomingRawList: any[] = Array.isArray(payload.students)
+          ? payload.students
+          : (payload.data && Array.isArray(payload.data.students) ? payload.data.students : []);
+
+        if (!Array.isArray(incomingRawList)) {
+          return res.status(400).json({ success: false, error: 'students array is required for sync_students_from_sheet3' });
+        }
+
+        console.log(`[Sheet3 Sync] Processing roster synchronization for ${incomingRawList.length} students...`);
+
+        // Fetch all current students from Firestore collection
+        const existingSnap = await getDocs(collection(firestoreDb, 'students'));
+        const existingDocsMap = new Map<string, any>();
+        existingSnap.docs.forEach((d) => {
+          const data = d.data();
+          existingDocsMap.set(d.id, { docId: d.id, ...data });
+          if (data.roll) {
+            existingDocsMap.set(String(data.roll).trim().toLowerCase(), { docId: d.id, ...data });
+          }
+        });
+
+        const incomingRollsSet = new Set<string>();
+        const validIncomingStudents: { roll: string; name: string; slNo: number | string | null; phone?: string; joinedMonth?: string }[] = [];
+
+        for (const item of incomingRawList) {
+          if (!item || !item.roll) continue;
+          const rollStr = String(item.roll).trim();
+          if (!rollStr) continue;
+          incomingRollsSet.add(rollStr.toLowerCase());
+
+          const slNoVal = item.slNo !== undefined && item.slNo !== null && item.slNo !== ''
+            ? (isNaN(Number(item.slNo)) ? String(item.slNo).trim() : Number(item.slNo))
+            : null;
+
+          validIncomingStudents.push({
+            roll: rollStr,
+            name: String(item.name || '').trim(),
+            slNo: slNoVal,
+            phone: item.phone ? String(item.phone).trim() : undefined,
+            joinedMonth: item.joinedMonth ? String(item.joinedMonth).trim() : undefined,
+          });
+        }
+
+        const db = loadDB();
+        const updatedStudentsList: Student[] = [];
+        let upsertCount = 0;
+
+        // Upsert each student under document ID s_{roll} in Firestore
+        for (const s of validIncomingStudents) {
+          const roll = s.roll;
+          const docId = `s_${roll}`;
+          const existingData =
+            existingDocsMap.get(docId) ||
+            existingDocsMap.get(roll.toLowerCase()) ||
+            db.students.find((st) => st.roll === roll || st.id === docId);
+
+          // Preserve existing fields such as totalPaid, status, phone, joinedMonth
+          const preservedTotalPaid =
+            existingData?.totalPaid !== undefined && existingData?.totalPaid !== null
+              ? Number(existingData.totalPaid)
+              : 0;
+
+          const preservedStatus = (existingData?.status || 'active') as 'active' | 'inactive';
+          const preservedPhone = existingData?.phone || s.phone || '';
+          const preservedJoinedMonth = existingData?.joinedMonth || s.joinedMonth || db.config.startMonth || '2026-08';
+
+          const studentRecord: Student = {
+            id: docId,
+            roll: roll,
+            name: s.name,
+            phone: preservedPhone,
+            status: preservedStatus,
+            joinedMonth: preservedJoinedMonth,
+            totalPaid: preservedTotalPaid,
+            slNo: s.slNo !== null ? s.slNo : (existingData?.slNo || null),
+          };
+
+          // Write to Firestore under document ID s_{roll} using setDoc(..., { merge: true })
+          await setDoc(doc(firestoreDb, 'students', docId), studentRecord, { merge: true });
+          upsertCount++;
+          updatedStudentsList.push(studentRecord);
+        }
+
+        // If a student roll is no longer present in incoming students array, delete document in Firestore
+        let deleteCount = 0;
+        for (const d of existingSnap.docs) {
+          const data = d.data();
+          const existingRoll = String(data.roll || d.id.replace(/^s_/, '')).trim().toLowerCase();
+          if (!incomingRollsSet.has(existingRoll)) {
+            await deleteDoc(doc(firestoreDb, 'students', d.id));
+            deleteCount++;
+            console.log(`[Sheet3 Sync] Deleted student document '${d.id}' (Roll: ${data.roll}) not in Sheet3`);
+          } else if (d.id !== `s_${data.roll}` && d.id !== `s_${existingRoll}`) {
+            // Clean up obsolete/duplicate legacy docId
+            await deleteDoc(doc(firestoreDb, 'students', d.id));
+            console.log(`[Sheet3 Sync] Cleaned up legacy doc '${d.id}' for roll ${data.roll}`);
+          }
+        }
+
+        // Update in-memory database with custom sorting
+        updatedStudentsList.sort(compareStudents);
+        db.students = updatedStudentsList;
+        db.config.lastSyncTime = new Date().toISOString();
+        saveDB(db);
+
+        const details = calculateFundDetails(db);
+        console.log(`[Sheet3 Sync] Completed: ${upsertCount} upserted, ${deleteCount} deleted from Firestore.`);
+
+        return res.json({
+          success: true,
+          message: `Sheet3 student roster synced successfully (${upsertCount} upserted, ${deleteCount} removed)`,
+          upsertCount,
+          deleteCount,
+          totalStudents: db.students.length,
+          ...details,
+        });
+      }
 
       const db = loadDB();
       const webhookUrl = (payload.url || req.query?.url || db.config.googleSheetWebhookUrl || 'https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec') as string;

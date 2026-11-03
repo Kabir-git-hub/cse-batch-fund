@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { X, Check, CreditCard, Calendar, User, FileText, Plus } from 'lucide-react';
 import { Student, BatchConfig } from '../../types';
+import { compareStudents } from '../../utils/studentSorter';
+import { auth } from '../../firebase';
 
 interface PaymentModalProps {
   students: Student[];
@@ -34,12 +36,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onClose,
   onSubmit,
 }) => {
-  const [selectedRoll, setSelectedRoll] = useState(preselectedStudent ? preselectedStudent.roll : students[0]?.roll || '');
+  const sortedStudents = React.useMemo(() => [...students].sort(compareStudents), [students]);
+  const [selectedRoll, setSelectedRoll] = useState(preselectedStudent ? preselectedStudent.roll : sortedStudents[0]?.roll || '');
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'bKash' | 'Nagad' | 'Rocket' | 'Cash' | 'Bank'>('bKash');
   const [transactionRef, setTransactionRef] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [collectorName, setCollectorName] = useState('');
+
+  const getAdminName = () => {
+    const user = auth.currentUser;
+    return user?.displayName || user?.email || localStorage.getItem('sec_admin_email') || config?.managerName || 'Md. Rajib Hossain Sunny (CR)';
+  };
+
+  const [collectorName, setCollectorName] = useState(() => getAdminName());
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -47,15 +56,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   React.useEffect(() => {
     if (isOpen && !prevIsOpen.current) {
-      setSelectedRoll(preselectedStudent ? preselectedStudent.roll : students[0]?.roll || '');
+      setSelectedRoll(preselectedStudent ? preselectedStudent.roll : sortedStudents[0]?.roll || '');
       setSelectedMonths([]);
       setTransactionRef('');
       setNotes('');
       setPaymentDate(new Date().toISOString().split('T')[0]);
-      setCollectorName('');
+      setCollectorName(getAdminName());
     }
     prevIsOpen.current = isOpen;
-  }, [isOpen, preselectedStudent, students, config]);
+  }, [isOpen, preselectedStudent, sortedStudents, config]);
 
   if (!isOpen) return null;
 
@@ -96,7 +105,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRoll || selectedMonths.length === 0) return;
+    if (isSubmitting || !selectedRoll || selectedMonths.length === 0) return;
 
     setIsSubmitting(true);
     try {
@@ -154,11 +163,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               onChange={(e) => handleStudentChange(e.target.value)}
               className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-emerald-500/30"
             >
-              {[...students].sort((a, b) => Number(a.roll) - Number(b.roll)).map((s) => (
-              <option key={s.id} value={s.roll}>
-                {s.roll} — {s.name}
+              {sortedStudents.map((s) => (
+                <option key={s.id} value={s.roll}>
+                  {s.slNo !== undefined && s.slNo !== null ? `#${s.slNo} — ` : ''}{s.roll} — {s.name}
                 </option>
-                ))}
+              ))}
             </select>
           </div>
 
@@ -306,7 +315,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 placeholder="e.g. Md. Rajib Hossain Sunny (CR)"
                 value={collectorName}
                 onChange={(e) => setCollectorName(e.target.value)}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
+                disabled
+                readOnly
+                className="w-full px-3.5 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-medium text-slate-600 cursor-not-allowed"
               />
             </div>
           </div>

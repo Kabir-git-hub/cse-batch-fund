@@ -17,6 +17,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { StudentFundStatus } from '../types';
+import { compareStudentStatuses } from '../utils/studentSorter';
 
 interface MonthMatrixViewProps {
   studentStatuses: StudentFundStatus[];
@@ -29,7 +30,7 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid_up' | 'due_1_month' | 'overdue'>('all');
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
   const [selectedYearFilter, setSelectedYearFilter] = useState<'ALL' | '2026' | '2027' | '2028'>('ALL');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +69,7 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
   // Export matrix data as CSV for Google Sheets
   const handleExportCSV = () => {
     const headers = ['Roll', 'Name', 'Total Paid (BDT)', 'Months Paid Count', 'Months Due Count', ...visibleMonths];
-    const rows = filtered.map((item) => {
+    const rows = [...filtered].sort(compareStudentStatuses).map((item) => {
       const paidSet = new Set(item.monthsPaidList);
       const monthCols = visibleMonths.map((m) => (paidSet.has(m) ? 'PAID' : 'DUE'));
       return [
@@ -125,27 +126,14 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
               <Calendar className="w-5 h-5 text-emerald-600" /> Contribution Tracker
             </h2>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Track student batch monthly contributions (৳50/month per student).
+              Track student batch monthly contributions (50TK/Month).
             </p>
           </div>
 
           {/* Controls: View Switcher, Search, and Export */}
           <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
-            {/* View Mode Toggle: Mini Cards vs Matrix Table */}
+            {/* View Mode Toggle: Matrix Table vs Mini Cards */}
             <div className="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80">
-              <button
-                type="button"
-                onClick={() => setViewMode('cards')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  viewMode === 'cards'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="Mini Cards View"
-              >
-                <LayoutGrid className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Mini Cards</span>
-              </button>
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
@@ -158,6 +146,19 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
               >
                 <Table className="w-3.5 h-3.5 text-teal-600" />
                 <span>Matrix Table</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  viewMode === 'cards'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Mini Cards View"
+              >
+                <LayoutGrid className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Mini Cards</span>
               </button>
             </div>
 
@@ -242,7 +243,7 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
       {viewMode === 'cards' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {[...filtered]
-            .sort((a, b) => Number(a.student.roll) - Number(b.student.roll))
+            .sort(compareStudentStatuses)
             .map((item) => {
               const { initials, bgGradient } = getAvatarMeta(item.student.name, item.student.roll);
               const paidCount = item.monthsPaidList.length;
@@ -263,6 +264,11 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap">
+                            {item.student.slNo !== undefined && item.student.slNo !== null && (
+                              <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-50 px-1 py-0.2 rounded border border-slate-200/60">
+                                #{item.student.slNo}
+                              </span>
+                            )}
                             <div className="font-mono text-xs font-bold text-slate-900 bg-slate-100/90 border border-slate-200/80 px-2 py-0.5 rounded-md inline-block">
                               Roll {item.student.roll}
                             </div>
@@ -428,13 +434,18 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-sans">
                   {[...filtered]
-                    .sort((a, b) => Number(a.student.roll) - Number(b.student.roll))
+                    .sort(compareStudentStatuses)
                     .map((item) => {
                       const paidSet = new Set(item.monthsPaidList);
                       return (
                         <tr key={item.student.id} className="hover:bg-slate-50/90 transition-colors">
                           <td className="py-2.5 px-3 sticky left-0 bg-white hover:bg-slate-50 border-r border-slate-200/80 z-10 shadow-2xs">
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {item.student.slNo !== undefined && item.student.slNo !== null && (
+                                <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-50 px-1 py-0.2 rounded border border-slate-200/50">
+                                  #{item.student.slNo}
+                                </span>
+                              )}
                               <span className="font-mono font-bold text-slate-900">{item.student.roll}</span>
                               {(item.student.name.includes('Rajib') || item.student.roll === '2023331523') && (
                                 <span className="px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase">

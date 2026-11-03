@@ -1,9 +1,34 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Configuration documents (batch info, manager contact, admin access)
+    match /config/{configId} {
+      allow read, write: if true;
+    }
+
+    // Students collection (batch members roster, roll numbers, status)
+    match /students/{studentId} {
+      allow read, write: if true;
+    }
+
+    // Payment Receipts collection (real-time receipts and payment logs)
+    match /receipts/{receiptId} {
+      allow read, write: if true;
+    }
+
+    // Expenses collection (vouchers and expense tracking)
+    match /expenses/{expenseId} {
+      allow read, write: if true;
+    }
+
+    // Test connectivity collection
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+
+    // Fallback catch-all
     match /{document=**} {
       allow read, write: if true;
     }
   }
 }
-

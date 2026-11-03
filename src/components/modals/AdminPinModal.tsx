@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Shield, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { auth, googleProvider, signInWithPopup, db, doc, getDoc } from '../../firebase';
+import { auth, googleProvider, signInWithPopup, db, doc, getDoc, handleFirestoreError, OperationType } from '../../firebase';
 
 interface AdminPinModalProps {
   isOpen: boolean;
@@ -93,7 +93,15 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
       const cleanEmail = userEmail.trim().toLowerCase();
 
       // 2. Strict Config Query: ONLY fetch the 'batch' document from the 'config' collection
-      const configSnap = await getDoc(doc(db, 'config', 'batch'));
+      let configSnap;
+      try {
+        configSnap = await getDoc(doc(db, 'config', 'batch'));
+      } catch (docErr: any) {
+        if (docErr?.code === 'permission-denied' || docErr?.message?.includes('Missing or insufficient permissions')) {
+          handleFirestoreError(docErr, OperationType.GET, 'config/batch');
+        }
+        throw docErr;
+      }
       if (!configSnap.exists()) {
         throw new Error('Configuration document not found in Firestore config/batch.');
       }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Receipt, Plus, Tag, FileText, Search } from 'lucide-react';
+import { Receipt, Plus, Tag, FileText, Search, Pencil, Trash2 } from 'lucide-react';
 import { Expense } from '../types';
 
 interface ExpenseTrackerViewProps {
@@ -7,6 +7,8 @@ interface ExpenseTrackerViewProps {
   isAdmin: boolean;
   onOpenExpenseModal: () => void;
   onSelectExpense: (expense: Expense) => void;
+  onEditExpense?: (expense: Expense) => void;
+  onDeleteExpense?: (expense: Expense) => void;
 }
 
 export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
@@ -14,6 +16,8 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
   isAdmin,
   onOpenExpenseModal,
   onSelectExpense,
+  onEditExpense,
+  onDeleteExpense,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -133,12 +137,37 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
                   <td className="py-3.5 px-4 sm:px-6 text-right" onClick={(event) => event.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1.5">
                       <button
+                        type="button"
                         onClick={() => onSelectExpense(e)}
                         className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
                         title="View Voucher Proof & Notes"
                       >
                         <FileText className="w-4 h-4" />
                       </button>
+                      {isAdmin && (
+                        <>
+                          {onEditExpense && (
+                            <button
+                              type="button"
+                              onClick={() => onEditExpense(e)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Edit Expense"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+                          {onDeleteExpense && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteExpense(e)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Delete Expense"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>

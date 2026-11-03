@@ -102,18 +102,72 @@ var WEBHOOK_URL = "${window.location.origin}/api/fund/sheet-webhook";
 // Triggers mapping - all points lead to notifyWebApp()
 function onChange(e) {
   notifyWebApp();
+  syncStudentsFromSheet3();
 }
 
 function handleSheetChange(e) {
   notifyWebApp();
+  syncStudentsFromSheet3();
 }
 
 function onSheetChange(e) {
   notifyWebApp();
+  syncStudentsFromSheet3();
 }
 
 function onEdit(e) {
   notifyWebApp();
+  try {
+    var sheetName = e && e.range ? e.range.getSheet().getName() : '';
+    if (sheetName === 'Sheet3') {
+      syncStudentsFromSheet3();
+    }
+  } catch (err) {}
+}
+
+// Automated Sheet3 Student Roster Sync to Website & Firestore
+function syncStudentsFromSheet3() {
+  try {
+    if (!WEBHOOK_URL || WEBHOOK_URL.indexOf('http') !== 0) return;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet3 = ss.getSheetByName('Sheet3') || (ss.getSheets().length > 2 ? ss.getSheets()[2] : null);
+    if (!sheet3) return;
+
+    var values = sheet3.getDataRange().getValues();
+    if (values.length < 2) return;
+
+    var headers = values[0].map(function(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); });
+    var slCol = headers.findIndex(function(h) { return h.indexOf('sl') >= 0 || h.indexOf('no') >= 0 || h === 'id'; });
+    var rollCol = headers.findIndex(function(h) { return h.indexOf('roll') >= 0 || h.indexOf('reg') >= 0; });
+    var nameCol = headers.findIndex(function(h) { return h.indexOf('name') >= 0; });
+
+    if (rollCol < 0) rollCol = 1;
+    if (nameCol < 0) nameCol = 2;
+
+    var students = [];
+    for (var i = 1; i < values.length; i++) {
+      var row = values[i];
+      var rollVal = String(row[rollCol] || '').trim().replace(/\.0+$/, '');
+      var nameVal = String(row[nameCol] || '').trim();
+      var slVal = slCol >= 0 ? row[slCol] : i;
+      if (rollVal) {
+        students.push({ slNo: slVal, roll: rollVal, name: nameVal });
+      }
+    }
+
+    if (students.length > 0) {
+      var payload = JSON.stringify({ type: 'sync_students_from_sheet3', students: students });
+      UrlFetchApp.fetch(WEBHOOK_URL, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: payload,
+        muteHttpExceptions: true
+      });
+      Logger.log("Successfully synced " + students.length + " students from Sheet3 to Website & Firebase!");
+    }
+  } catch (err) {
+    Logger.log("Error in syncStudentsFromSheet3: " + err.message);
+  }
 }
 
 function notifyWebApp() {
@@ -128,6 +182,53 @@ function notifyWebApp() {
     UrlFetchApp.fetch(WEBHOOK_URL, options);
   } catch (err) {
     Logger.log("Webhook sync error: " + err.message);
+  }
+}
+
+function doGet(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet1 = ss.getSheetByName('Sheet1') || ss.getSheets()[0];
+    var sheet2 = ss.getSheetByName('Sheet2') || (ss.getSheets().length > 1 ? ss.getSheets()[1] : null);
+
+    // Sum permanent payments from Sheet1
+    var totalCollected = 0;
+    if (sheet1) {
+      var values1 = sheet1.getDataRange().getValues();
+      var headers1 = values1[0].map(function(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); });
+      var paidCol = headers1.findIndex(function(h) { return h.indexOf('paid') >= 0 || h.indexOf('amount') >= 0 || h.indexOf('total') >= 0; });
+      if (paidCol < 0) paidCol = 3;
+      for (var i = 1; i < values1.length; i++) {
+        var val = Number(values1[i][paidCol]) || 0;
+        totalCollected += val;
+      }
+    }
+
+    // Sum permanent expenses from Sheet2
+    var totalSpent = 0;
+    if (sheet2) {
+      var values2 = sheet2.getDataRange().getValues();
+      var headers2 = values2[0].map(function(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); });
+      var amtCol = headers2.findIndex(function(h) { return h.indexOf('amount') >= 0 || h.indexOf('cost') >= 0; });
+      if (amtCol < 0) amtCol = 3;
+      for (var j = 1; j < values2.length; j++) {
+        var expVal = Number(values2[j][amtCol]) || 0;
+        totalSpent += expVal;
+      }
+    }
+
+    var netBalance = totalCollected - totalSpent;
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success',
+      totalFund: totalCollected,
+      totalCollected: totalCollected,
+      totalExpense: totalSpent,
+      totalSpent: totalSpent,
+      netBalance: netBalance,
+      timestamp: new Date().toISOString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.message })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
@@ -214,51 +315,9 @@ function doPost(e) {
         sheet2.appendRow(['VoucherNo', 'Title', 'Category', 'Amount', 'Date', 'SpentBy', 'Notes']);
       }
       sheet2.appendRow([data.voucherNo, data.title, data.category, data.amount, data.date, data.spentBy, data.notes]);
-    } else if (data.action === 'delete_expense' || data.type === 'delete_expense') {
-      var sheet2 = ss.getSheetByName('Sheet2') || ss.getSheets()[1];
-      if (sheet2) {
-        var values = sheet2.getDataRange().getValues();
-        for (var i = 1; i < values.length; i++) {
-          if (String(values[i][0]) === String(data.voucherNo) || (data.title && String(values[i][1]).toLowerCase() === String(data.title).toLowerCase())) {
-            sheet2.deleteRow(i + 1);
-            break;
-          }
-        }
-      }
-    } else if (data.type === 'add_student' || data.action === 'add_student') {
-      var sheet = ss.getSheetByName('Sheet1') || ss.getSheets()[0];
-      var values = sheet.getDataRange().getValues();
-      var headers = values[0].map(function(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); });
-      var rollCol = headers.findIndex(function(h) { return h.indexOf('roll') >= 0 || h.indexOf('id') >= 0; });
-      if (rollCol < 0) rollCol = 0;
-      
-      var targetRoll = String(data.studentRoll || '').trim();
-      var foundIndex = -1;
-      for (var i = 1; i < values.length; i++) {
-        var rowRoll = String(values[i][rollCol]).replace(/\\.0+$/, '').replace(/[^0-9a-zA-Z]/g, '');
-        if (rowRoll === targetRoll) {
-          foundIndex = i;
-          break;
-        }
-      }
-      if (foundIndex < 0) {
-        sheet.appendRow([data.studentRoll, data.name || '', data.phone || '', 0, 'Active']);
-      }
-    } else if (data.type === 'delete_student' || data.action === 'delete_student') {
-      var sheet = ss.getSheetByName('Sheet1') || ss.getSheets()[0];
-      var values = sheet.getDataRange().getValues();
-      var headers = values[0].map(function(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); });
-      var rollCol = headers.findIndex(function(h) { return h.indexOf('roll') >= 0 || h.indexOf('id') >= 0; });
-      if (rollCol < 0) rollCol = 0;
-      
-      var targetRoll = String(data.studentRoll || '').trim();
-      for (var i = 1; i < values.length; i++) {
-        var rowRoll = String(values[i][rollCol]).replace(/\\.0+$/, '').replace(/[^0-9a-zA-Z]/g, '');
-        if (rowRoll === targetRoll) {
-          sheet.deleteRow(i + 1);
-          break;
-        }
-      }
+    } else if (data.action === 'delete_expense' || data.type === 'delete_expense' || data.type === 'delete_student' || data.action === 'delete_student' || data.action === 'delete_payment') {
+      // Indestructible Append-Only Ledger: Google Sheet retains all historical records permanently
+      Logger.log("Preserved historical record in Sheet ledger: " + JSON.stringify(data));
     }
     return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {

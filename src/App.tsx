@@ -13,12 +13,14 @@ import { StudentModal } from './components/modals/StudentModal';
 import { ReceiptModal } from './components/modals/ReceiptModal';
 import { AdminPinModal } from './components/modals/AdminPinModal';
 import { GoogleSheetSyncModal } from './components/modals/GoogleSheetSyncModal';
-
+import { EditReceiptModal } from './components/modals/EditReceiptModal';
+import { EditExpenseModal } from './components/modals/EditExpenseModal';
 import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './types';
 import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw } from 'lucide-react';
 import { SecLogo } from './components/SecLogo';
 import { calculateFundDetails } from './utils/fundCalculator';
-import { db, doc, onSnapshot, getDoc, setDoc, updateDoc } from './firebase';
+import { compareStudents } from './utils/studentSorter';
+import { db, doc, collection, onSnapshot, getDoc, setDoc, updateDoc, deleteDoc, handleFirestoreError, OperationType } from './firebase';
 
 const defaultEmptyConfig: BatchConfig = {
   batchName: 'CSE Batch-17',
@@ -33,7 +35,7 @@ const defaultEmptyConfig: BatchConfig = {
   allowedAdminEmails: [],
   googleSheetPaymentsUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0',
   googleSheetExpensesUrl: 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=503096906#gid=503096906',
-  googleSheetWebhookUrl: 'https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec',
+  googleSheetWebhookUrl: 'https://script.google.com/macros/s/AKfycbz3LZfvJSVokHI5BNv1mSXtBX2EtsP_mIVb1Mp-01sVm1kLHbcEt1VMIt4-7tvifYq3/exec',
   lastSyncTime: new Date().toISOString()
 };
 
@@ -58,6 +60,11 @@ export default function App() {
   const [studentStatuses, setStudentStatuses] = useState<StudentFundStatus[]>([]);
   const [stats, setStats] = useState<FundStats>(defaultStats);
   const [allTargetMonths, setAllTargetMonths] = useState<string[]>([]);
+  const [sheetSummary, setSheetSummary] = useState<{
+    netBalance: number;
+    totalFund: number;
+    totalExpense: number;
+  } | null>(null);
   
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +96,15 @@ export default function App() {
       const cleanEmail = emailToVerify.trim().toLowerCase();
 
       // Strict Config Query: Check doc(db, 'config', 'batch')
-      const configSnap = await getDoc(doc(db, 'config', 'batch'));
+      let configSnap;
+      try {
+        configSnap = await getDoc(doc(db, 'config', 'batch'));
+      } catch (docErr: any) {
+        if (docErr?.code === 'permission-denied' || docErr?.message?.includes('Missing or insufficient permissions')) {
+          handleFirestoreError(docErr, OperationType.GET, 'config/batch');
+        }
+        throw docErr;
+      }
       if (configSnap.exists()) {
         const configData = configSnap.data();
         const allowedList = Array.isArray(configData?.allowedAdminEmails)
@@ -143,6 +158,10 @@ export default function App() {
   const [preselectedStudent, setPreselectedStudent] = useState<Student | null>(null);
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
+  const [isEditReceiptModalOpen, setIsEditReceiptModalOpen] = useState(false);
+  const [editingReceipt, setEditingReceipt] = useState<PaymentReceipt | null>(null);
+  const [isEditExpenseModalOpen, setIsEditExpenseModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   // Quick Sheet Sync State & Handler
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
@@ -152,7 +171,7 @@ export default function App() {
     if (isSyncingSheet) return;
     setIsSyncingSheet(true);
     try {
-      const webhookUrl = config?.googleSheetWebhookUrl || 'https://script.google.com/macros/s/AKfycbwEU4y1bjEKtLk25MW-nYrJWoKdJ79HbrD-N6pqAUCKXv_vGf97qveSMR19M1GF0TTX/exec';
+      const webhookUrl = config?.googleSheetWebhookUrl || 'https://script.google.com/macros/s/AKfycbz3LZfvJSVokHI5BNv1mSXtBX2EtsP_mIVb1Mp-01sVm1kLHbcEt1VMIt4-7tvifYq3/exec';
       const sheetUrl = config?.googleSheetUrl || config?.googleSheetPaymentsUrl || 'https://docs.google.com/spreadsheets/d/14LJMkiQi1CkZeCSJTF2BFw_bRCWyUYwlc46B18ySEfE/edit?gid=0#gid=0';
 
       let directData: { students?: any[]; expenses?: any[] } | undefined = undefined;
@@ -210,7 +229,7 @@ export default function App() {
     }
   };
 
-  // Real-time calculation whenever core collections update (calculates clean zero stats if empty)
+  // Rule 4: Real-time calculation with Sheet-Driven Summary for Net Balance, Total Expense, Total Fund
   useEffect(() => {
     const { studentStatuses: calculatedStatuses, stats: calculatedStats, allTargetMonths: calculatedMonths } = calculateFundDetails(
       config,
@@ -218,17 +237,26 @@ export default function App() {
       receipts,
       expenses
     );
+
+    // Rule 4: UI Dashboard (Net Balance, Total Expense, Total Fund) does NOT calculate from Firebase;
+    // It fetches directly from the Google Sheet permanent ledger (doGet endpoint)
+    if (sheetSummary) {
+      calculatedStats.netBalance = sheetSummary.netBalance;
+      calculatedStats.totalCollected = sheetSummary.totalFund;
+      calculatedStats.totalSpent = sheetSummary.totalExpense;
+    }
+
     setStudentStatuses(calculatedStatuses);
     setStats(calculatedStats);
     setAllTargetMonths(calculatedMonths);
-  }, [config, students, receipts, expenses]);
+  }, [config, students, receipts, expenses, sheetSummary]);
 
-  // Load Data with Real-Time Firebase Firestore Admin Auth & Sheet-Driven Data Fetching
+  // Load Data: Firebase Real-Time Listeners (UI Lists) + Google Sheet Permanent Summary (Dashboard)
   useEffect(() => {
     let unsubs: (() => void)[] = [];
 
     try {
-      // 1. Real-time Config listener on `config/batch` strictly for instant Admin Auth & Dynamic Config verification
+      // 1. Real-time Config listener on `config/batch` for instant Admin Auth & Dynamic Config
       const unsubConfig = onSnapshot(
         doc(db, 'config', 'batch'),
         (snap) => {
@@ -236,7 +264,6 @@ export default function App() {
             const newConfig = snap.data() as BatchConfig;
             setConfig(newConfig);
 
-            // Instant Revocation: If currently verified admin email was removed from allowedAdminEmails in Firestore, immediately revoke access
             const currentStoredEmail = localStorage.getItem('sec_admin_email') || '';
             if (currentStoredEmail) {
               const allowedList = Array.isArray(newConfig?.allowedAdminEmails)
@@ -251,15 +278,88 @@ export default function App() {
             }
           }
         },
-        (err) => console.warn('Firestore config onSnapshot error:', err)
+        (err) => {
+          console.warn('Firestore config onSnapshot error:', err);
+          handleFirestoreError(err, OperationType.GET, 'config/batch');
+        }
       );
       unsubs.push(unsubConfig);
+
+      // 2. Real-time Students listener on `students` collection
+      const unsubStudents = onSnapshot(
+        collection(db, 'students'),
+        (snap) => {
+          const map = new Map<string, Student>();
+          snap.forEach((docSnap) => {
+            const data = docSnap.data() as Student;
+            if (data && (data.roll || data.name)) {
+              map.set(docSnap.id, { ...data, id: docSnap.id });
+            }
+          });
+          const list = Array.from(map.values());
+          list.sort(compareStudents);
+          if (list.length > 0 || !snap.empty) {
+            setStudents(list);
+          }
+          setLoading(false);
+        },
+        (err) => {
+          console.warn('Firestore students onSnapshot error:', err);
+          handleFirestoreError(err, OperationType.LIST, 'students');
+        }
+      );
+      unsubs.push(unsubStudents);
+
+      // 3. Real-time Receipts listener on `receipts` collection
+      const unsubReceipts = onSnapshot(
+        collection(db, 'receipts'),
+        (snap) => {
+          const map = new Map<string, PaymentReceipt>();
+          snap.forEach((docSnap) => {
+            const data = docSnap.data() as PaymentReceipt;
+            if (data && (data.receiptNo || data.amount !== undefined)) {
+              map.set(docSnap.id, { ...data, id: docSnap.id });
+            }
+          });
+          const list = Array.from(map.values());
+          list.sort((a, b) => new Date(b.paymentDate || 0).getTime() - new Date(a.paymentDate || 0).getTime());
+          setReceipts(list);
+        },
+        (err) => {
+          console.warn('Firestore receipts onSnapshot error:', err);
+          handleFirestoreError(err, OperationType.LIST, 'receipts');
+        }
+      );
+      unsubs.push(unsubReceipts);
+
+      // 4. Real-time Expenses listener on `expenses` collection
+      const unsubExpenses = onSnapshot(
+        collection(db, 'expenses'),
+        (snap) => {
+          const map = new Map<string, Expense>();
+          snap.forEach((docSnap) => {
+            const data = docSnap.data() as Expense;
+            if (data && (data.voucherNo || data.title || data.amount !== undefined)) {
+              map.set(docSnap.id, { ...data, id: docSnap.id });
+            }
+          });
+          const list = Array.from(map.values());
+          list.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+          setExpenses(list);
+        },
+        (err) => {
+          console.warn('Firestore expenses onSnapshot error:', err);
+          handleFirestoreError(err, OperationType.LIST, 'expenses');
+        }
+      );
+      unsubs.push(unsubExpenses);
     } catch (listenerErr) {
-      console.warn('Realtime config onSnapshot setup failed:', listenerErr);
+      console.warn('Realtime onSnapshot setup failed:', listenerErr);
     }
 
-    // UI Data Source: Read exclusively from Sheets via backend proxy
+    // Initial fetch of full data and permanent sheet summary
     fetchFundData();
+    fetchSheetSummary();
 
     return () => {
       unsubs.forEach((unsub) => {
@@ -269,6 +369,61 @@ export default function App() {
       });
     };
   }, []);
+
+  // Rule 4: Fetch summary calculations directly from Google Sheet (doGet endpoint) with Cache-Control: no-store
+  const fetchSheetSummary = async () => {
+    const timestamp = new Date().getTime();
+    const webhookUrl = config?.googleSheetWebhookUrl;
+
+    // Direct browser doGet fetch if webhook URL is configured
+    if (webhookUrl && webhookUrl.includes('script.google.com')) {
+      try {
+        const u = `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${timestamp}`;
+        const directRes = await fetch(u, {
+          method: 'GET',
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-store',
+            'Accept': 'application/json, text/plain, */*',
+          },
+        });
+        if (directRes.ok) {
+          const directJson = await directRes.json();
+          if (directJson && (directJson.totalFund !== undefined || directJson.totalCollected !== undefined || directJson.netBalance !== undefined)) {
+            const tf = Number(directJson.totalFund ?? directJson.totalCollected ?? 0);
+            const te = Number(directJson.totalExpense ?? directJson.totalSpent ?? 0);
+            const nb = Number(directJson.netBalance ?? (tf - te));
+            setSheetSummary({ netBalance: nb, totalFund: tf, totalExpense: te });
+            return;
+          }
+        }
+      } catch (directErr) {
+        // Direct browser GET hit CORS or doGet is not returning JSON, falling back to server proxy
+      }
+    }
+
+    // Server-side proxy with strict Cache-Control: no-store
+    try {
+      const res = await fetch(`/api/fund/sheet-summary?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          const tf = Number(data.totalFund ?? data.totalCollected ?? 0);
+          const te = Number(data.totalExpense ?? data.totalSpent ?? 0);
+          const nb = Number(data.netBalance ?? (tf - te));
+          setSheetSummary({ netBalance: nb, totalFund: tf, totalExpense: te });
+        }
+      }
+    } catch (err) {
+      console.warn('fetchSheetSummary server notice:', err);
+    }
+  };
 
   // Fetch from Server API (Source of Truth: Google Sheet Mirror) - Strict anti-caching & timestamp cache buster
   const fetchFundData = async (retryCount = 0) => {
@@ -301,7 +456,7 @@ export default function App() {
             }
           }
         }
-        setStudents(Array.isArray(data.students) ? data.students : []);
+        setStudents(Array.isArray(data.students) ? [...data.students].sort(compareStudents) : []);
         setReceipts(Array.isArray(data.receipts) ? data.receipts : []);
         setExpenses(Array.isArray(data.expenses) ? data.expenses : []);
         if (data.studentStatuses) setStudentStatuses(data.studentStatuses);
@@ -332,7 +487,7 @@ export default function App() {
     return false;
   };
 
-  // Submit Payment Receipt: Google Sheet FIRST -> Firebase Append-Only Archive -> Backend
+  // 1. Submit Payment Receipt: Firebase FIRST -> Google Sheet SECOND -> Backend
   const handleAddPayment = async (paymentData: any) => {
     try {
       const receiptId = 'r_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
@@ -342,7 +497,7 @@ export default function App() {
       const paymentAmount = Number(paymentData.amount) || 0;
       const newStatus = (student?.status || 'active') as 'active' | 'inactive';
 
-      // 0. Calculate Payment Accumulation: Combine prior total with new payment
+      // Calculate Payment Accumulation: Combine prior total with new payment
       const studentStatus = studentStatuses.find((st) => st.student.roll === studentRoll || st.student.id === (student?.id || ''));
       const receiptsTotal = receipts
         .filter((r) => r.studentRoll === studentRoll || (student && r.studentId === student.id))
@@ -370,65 +525,67 @@ export default function App() {
         verified: true,
       };
 
-      // 1. Post to Google Sheets Webhook FIRST with CORS bypass & accumulated totalPaid payload
+      // STEP 1: Write FIRST to Firebase Firestore (using setDoc)
+      try {
+        await setDoc(doc(db, 'receipts', receiptId), receiptObj, { merge: true });
+      } catch (err: any) {
+        if (err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions')) {
+          handleFirestoreError(err, OperationType.WRITE, `receipts/${receiptId}`);
+        }
+        console.warn('Firestore setDoc receipts notice:', err);
+      }
+
+      // Update student record in Firestore `students` collection (totalPaid & status)
+      const studentDocId = student?.id || ('s_' + studentRoll.trim().replace(/[^0-9a-zA-Z]/g, ''));
+      try {
+        await setDoc(doc(db, 'students', studentDocId), {
+          id: studentDocId,
+          roll: studentRoll,
+          name: studentName,
+          phone: student?.phone || '',
+          status: newStatus,
+          joinedMonth: student?.joinedMonth || config?.startMonth || '2026-08',
+          totalPaid: updatedTotalPaid,
+        }, { merge: true });
+      } catch (studentErr: any) {
+        if (studentErr?.code === 'permission-denied' || studentErr?.message?.includes('Missing or insufficient permissions')) {
+          handleFirestoreError(studentErr, OperationType.WRITE, `students/${studentDocId}`);
+        }
+        console.warn('Firestore student totalPaid update notice:', studentErr);
+      }
+
+      // STEP 2: IMMEDIATELY after successful Firebase write, trigger POST request to Google Apps Script Webhook
+      // Rule 3: For Payments, send: { type: 'payment', receiptNo, studentName, studentRoll, amount, date, collectedBy, notes }
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
         try {
-          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
+          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${Date.now()}`, {
             method: 'POST',
             mode: 'no-cors',
             cache: 'no-store',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({
-              action: 'payment',
               type: 'payment',
-              roll: studentRoll,
-              studentRoll: studentRoll,
-              studentName: studentName,
-              amount: paymentAmount,
+              receiptNo: receiptObj.receiptNo,
+              studentName: receiptObj.studentName,
+              studentRoll: receiptObj.studentRoll,
+              amount: receiptObj.amount,
+              date: receiptObj.paymentDate,
+              collectedBy: receiptObj.collectorName || 'Batch Admin',
+              notes: receiptObj.notes || '',
+              roll: receiptObj.studentRoll,
               totalPaid: updatedTotalPaid,
               status: newStatus,
+              monthsPaid: receiptObj.monthsPaid,
             }),
           });
         } catch (e) {
-          console.warn('Direct Apps Script doPost notice:', e);
+          console.warn('Apps Script doPost payment notice:', e);
         }
       }
 
-      // 2. Append-Only Archive to Firebase Firestore `receipts`
-      try {
-        await setDoc(doc(db, 'receipts', receiptId), receiptObj, { merge: true });
-      } catch (firestoreErr) {
-        console.warn('Direct Firestore receipt archive warning:', firestoreErr);
-      }
-
-      // 3. Update student record in Firestore `students` collection (totalPaid & status)
-      const studentDocId = student?.id || ('s_' + studentRoll.trim().replace(/[^0-9a-zA-Z]/g, ''));
-
-      try {
-        const studentDocRef = doc(db, 'students', studentDocId);
-        try {
-          await updateDoc(studentDocRef, {
-            totalPaid: updatedTotalPaid,
-            status: newStatus,
-          });
-        } catch (updateErr) {
-          await setDoc(studentDocRef, {
-            id: studentDocId,
-            roll: studentRoll,
-            name: studentName,
-            phone: student?.phone || '',
-            status: newStatus,
-            joinedMonth: student?.joinedMonth || config?.startMonth || '2026-08',
-            totalPaid: updatedTotalPaid,
-          }, { merge: true });
-        }
-      } catch (studentErr) {
-        console.warn('Direct Firestore student archive warning:', studentErr);
-      }
-
-      // 4. Update backend API
-      const res = await fetch(`/api/fund/payments?t=${new Date().getTime()}`, {
+      // STEP 3: Sync to backend API
+      const res = await fetch(`/api/fund/payments?t=${Date.now()}`, {
         method: 'POST',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
@@ -437,9 +594,8 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to record payment');
 
-      // 5. Allow Google Apps Script enough time to finish writing, then auto re-fetch
-      await new Promise((res) => setTimeout(res, 1500));
-      await fetchFundData();
+      // STEP 4: Fetch Sheet permanent summary after giving Sheet write time
+      setTimeout(() => fetchSheetSummary(), 1500);
 
       if (data.receipt || receiptObj) {
         setSelectedReceipt(data.receipt || receiptObj);
@@ -451,7 +607,7 @@ export default function App() {
     }
   };
 
-  // Submit Expense: Google Sheet FIRST -> Firebase Append-Only Archive -> Backend
+  // 2. Submit Expense: Firebase FIRST -> Google Sheet SECOND -> Backend
   const handleAddExpense = async (expenseData: any) => {
     try {
       const expenseId = expenseData.id || ('e_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
@@ -474,39 +630,44 @@ export default function App() {
         notes: expenseData.notes || '',
       };
 
-      // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
+      // STEP 1: Write FIRST to Firebase Firestore (using setDoc)
+      try {
+        await setDoc(doc(db, 'expenses', expenseId), expenseObj, { merge: true });
+      } catch (err: any) {
+        if (err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions')) {
+          handleFirestoreError(err, OperationType.WRITE, `expenses/${expenseId}`);
+        }
+        console.warn('Firestore setDoc expenses notice:', err);
+      }
+
+      // STEP 2: IMMEDIATELY after successful Firebase write, trigger POST request to Google Apps Script Webhook
+      // Rule 3: For Expenses, send: { type: 'expense', voucherNo, title, amount, date, spentBy, category }
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
         try {
-          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
+          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${Date.now()}`, {
             method: 'POST',
             mode: 'no-cors',
             cache: 'no-store',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({
               type: 'expense',
-              voucherNo: expenseObj.voucherNo || expenseObj.id,
+              voucherNo: expenseObj.voucherNo,
               title: expenseObj.title,
-              category: expenseObj.category,
               amount: expenseObj.amount,
               date: expenseObj.date,
               spentBy: expenseObj.spentBy,
+              category: expenseObj.category,
+              notes: expenseObj.notes || '',
             }),
           });
         } catch (e) {
-          console.warn('Direct Apps Script doPost expense notice:', e);
+          console.warn('Apps Script doPost expense notice:', e);
         }
       }
 
-      // 2. Append-Only Archive to Firebase Firestore `expenses`
-      try {
-        await setDoc(doc(db, 'expenses', expenseId), expenseObj, { merge: true });
-      } catch (firestoreErr) {
-        console.warn('Direct Firestore expense archive warning:', firestoreErr);
-      }
-
-      // 3. Write to backend API
-      const res = await fetch(`/api/fund/expenses?t=${new Date().getTime()}`, {
+      // STEP 3: Sync to backend API
+      const res = await fetch(`/api/fund/expenses?t=${Date.now()}`, {
         method: 'POST',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
@@ -515,15 +676,14 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to add expense');
 
-      // 4. Allow Google Apps Script enough time to finish writing, then auto re-fetch
-      await new Promise((res) => setTimeout(res, 1500));
-      await fetchFundData();
+      // STEP 4: Fetch Sheet permanent summary
+      setTimeout(() => fetchSheetSummary(), 1500);
     } catch (err: any) {
       alert('Error: ' + err.message);
     }
   };
 
-  // Add / Edit Student: Google Sheet FIRST -> Firebase Append-Only Archive -> Backend
+  // 3. Add / Edit Student: Firebase FIRST -> Google Sheet SECOND -> Backend
   const handleAddStudent = async (studentData: any) => {
     try {
       const cleanRollVal = String(studentData.roll || '').trim().replace(/[^0-9a-zA-Z]/g, '');
@@ -537,36 +697,44 @@ export default function App() {
         joinedMonth: studentData.joinedMonth || config?.startMonth || '2026-08',
       };
 
-      // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
+      // STEP 1: Write FIRST to Firebase Firestore (using setDoc)
+      try {
+        await setDoc(doc(db, 'students', studentId), studentObj, { merge: true });
+      } catch (err: any) {
+        if (err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions')) {
+          handleFirestoreError(err, OperationType.WRITE, `students/${studentId}`);
+        }
+        console.warn('Firestore setDoc students notice:', err);
+      }
+
+      // STEP 2: IMMEDIATELY after successful Firebase write, trigger POST request to Google Apps Script Webhook
       const webhookUrl = config?.googleSheetWebhookUrl;
       if (webhookUrl && webhookUrl.includes('script.google.com')) {
         try {
-          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
+          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${Date.now()}`, {
             method: 'POST',
             mode: 'no-cors',
             cache: 'no-store',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({
               type: 'add_student',
+              action: 'add_student',
               studentRoll: studentObj.roll,
+              roll: studentObj.roll,
               name: studentObj.name,
+              studentName: studentObj.name,
               phone: studentObj.phone,
+              status: studentObj.status,
+              joinedMonth: studentObj.joinedMonth,
             }),
           });
         } catch (e) {
-          console.warn('Direct Apps Script doPost add_student notice:', e);
+          console.warn('Apps Script doPost add_student notice:', e);
         }
       }
 
-      // 2. Append-Only Archive to Firebase Firestore `students`
-      try {
-        await setDoc(doc(db, 'students', studentId), studentObj, { merge: true });
-      } catch (firestoreErr) {
-        console.warn('Direct Firestore student archive warning:', firestoreErr);
-      }
-
-      // 3. Write to backend API
-      const res = await fetch(`/api/fund/students?t=${new Date().getTime()}`, {
+      // STEP 3: Write to backend API
+      const res = await fetch(`/api/fund/students?t=${Date.now()}`, {
         method: 'POST',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
@@ -575,42 +743,42 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save student');
 
-      // 4. Allow Google Apps Script enough time to finish writing, then auto re-fetch
-      await new Promise((res) => setTimeout(res, 1500));
-      await fetchFundData();
       setSyncToast({ message: `Student ${studentData.name} saved successfully!`, type: 'success' });
+      setTimeout(() => fetchSheetSummary(), 1500);
     } catch (err: any) {
       alert('Error saving student: ' + err.message);
     }
   };
 
-  // Delete Student: Google Sheet FIRST -> Backend (STRICT: Never delete historical docs from Firestore)
+  // 4. Delete Student: Firebase ONLY (Rule 2: DO NOT delete from Google Sheet; Sheet remains permanent append-only ledger)
   const handleDeleteStudent = async (student: Student) => {
     try {
-      // 1. Post to Google Sheets Webhook FIRST with CORS bypass & exact payload
-      const webhookUrl = config?.googleSheetWebhookUrl;
-      if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        try {
-          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${new Date().getTime()}`, {
-            method: 'POST',
-            mode: 'no-cors',
-            cache: 'no-store',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-              type: 'delete_student',
-              studentRoll: student.roll,
-            }),
-          });
-        } catch (e) {
-          console.warn('Direct Apps Script doPost delete_student notice:', e);
+      // STEP 1: Execute deleteDoc in Firebase Firestore
+      try {
+        await deleteDoc(doc(db, 'students', student.id));
+        if (student.roll && student.roll !== student.id) {
+          try { await deleteDoc(doc(db, 'students', student.roll)); } catch (e) {}
         }
+      } catch (err: any) {
+        if (err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions')) {
+          handleFirestoreError(err, OperationType.DELETE, `students/${student.id}`);
+        }
+        console.warn('Firestore deleteDoc students notice:', err);
       }
 
-      // 2. STRICT RULE: NEVER delete historical documents from Firestore (Indestructible Append-Only Archive)
-      // The student is removed from the active Sheet/UI, but their historical document remains permanently archived in Firestore.
+      // Clean up receipts for this student from Firebase Firestore
+      const studentReceipts = receipts.filter(
+        (r) => r.studentId === student.id || r.studentRoll === student.roll
+      );
+      for (const r of studentReceipts) {
+        try { await deleteDoc(doc(db, 'receipts', r.id)); } catch (e) {}
+      }
 
-      // 3. Delete on backend API (removes from active UI memory without deleting Firestore archive)
-      const res = await fetch(`/api/fund/students/${encodeURIComponent(student.id || student.roll)}?t=${new Date().getTime()}`, {
+      // STEP 2: DO NOT send delete request to Google Sheet Webhook!
+      // The Google Sheet remains a permanent, indestructible append-only ledger.
+
+      // STEP 3: Delete on backend API (removes from active server memory and Firestore)
+      const res = await fetch(`/api/fund/students/${encodeURIComponent(student.id || student.roll)}?t=${Date.now()}`, {
         method: 'DELETE',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
@@ -624,13 +792,79 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete student');
 
-      // 4. Allow Google Apps Script enough time to finish writing, then auto re-fetch
-      await new Promise((res) => setTimeout(res, 1500));
-      await fetchFundData();
-      setSyncToast({ message: `Student ${student.name} (${student.roll}) removed from active sheet!`, type: 'success' });
+      setSyncToast({ message: `Student ${student.name} (${student.roll}) removed from Firebase! Sheet ledger preserved.`, type: 'success' });
     } catch (err: any) {
       alert('Error deleting student: ' + err.message);
-      await fetchFundData();
+    }
+  };
+
+  // 5. Delete Receipt (Firestore 'receipts' collection & recalculate student totalPaid)
+  const handleDeleteReceipt = async (receipt: PaymentReceipt) => {
+    if (!window.confirm(`Are you sure you want to delete receipt #${receipt.receiptNo} (${receipt.studentName} - ৳${receipt.amount})?`)) {
+      return;
+    }
+    try {
+      await deleteDoc(doc(db, 'receipts', receipt.id));
+      const student = students.find((s) => s.roll === receipt.studentRoll || s.id === receipt.studentId);
+      if (student) {
+        const studentDocId = student.id || ('s_' + student.roll.trim().replace(/[^0-9a-zA-Z]/g, ''));
+        const remainingReceipts = receipts.filter((r) => r.id !== receipt.id && (r.studentRoll === student.roll || r.studentId === student.id));
+        const newTotalPaid = remainingReceipts.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+        await setDoc(doc(db, 'students', studentDocId), { totalPaid: newTotalPaid }, { merge: true });
+      }
+
+      setSyncToast({ message: `Receipt #${receipt.receiptNo} deleted from Firestore!`, type: 'success' });
+      setTimeout(() => fetchSheetSummary(), 1500);
+    } catch (err: any) {
+      alert('Error deleting receipt: ' + err.message);
+    }
+  };
+
+  // 6. Update Receipt (Firestore 'receipts' collection & recalculate student totalPaid)
+  const handleUpdateReceipt = async (updatedReceipt: PaymentReceipt) => {
+    try {
+      await setDoc(doc(db, 'receipts', updatedReceipt.id), updatedReceipt, { merge: true });
+      const student = students.find((s) => s.roll === updatedReceipt.studentRoll || s.id === updatedReceipt.studentId);
+      if (student) {
+        const studentDocId = student.id || ('s_' + student.roll.trim().replace(/[^0-9a-zA-Z]/g, ''));
+        const otherReceipts = receipts.filter((r) => r.id !== updatedReceipt.id && (r.studentRoll === student.roll || r.studentId === student.id));
+        const newTotalPaid = otherReceipts.reduce((sum, r) => sum + (Number(r.amount) || 0), 0) + Number(updatedReceipt.amount || 0);
+        await setDoc(doc(db, 'students', studentDocId), { totalPaid: newTotalPaid }, { merge: true });
+      }
+
+      setSyncToast({ message: `Receipt #${updatedReceipt.receiptNo} updated in Firestore!`, type: 'success' });
+      setIsEditReceiptModalOpen(false);
+      setEditingReceipt(null);
+      setTimeout(() => fetchSheetSummary(), 1500);
+    } catch (err: any) {
+      alert('Error updating receipt: ' + err.message);
+    }
+  };
+
+  // 7. Delete Expense (Firestore 'expenses' collection)
+  const handleDeleteExpense = async (expense: Expense) => {
+    if (!window.confirm(`Are you sure you want to delete expense voucher #${expense.voucherNo} ("${expense.title}")?`)) {
+      return;
+    }
+    try {
+      await deleteDoc(doc(db, 'expenses', expense.id));
+      setSyncToast({ message: `Expense voucher #${expense.voucherNo} deleted from Firestore!`, type: 'success' });
+      setTimeout(() => fetchSheetSummary(), 1500);
+    } catch (err: any) {
+      alert('Error deleting expense: ' + err.message);
+    }
+  };
+
+  // 8. Update Expense (Firestore 'expenses' collection)
+  const handleUpdateExpense = async (updatedExpense: Expense) => {
+    try {
+      await setDoc(doc(db, 'expenses', updatedExpense.id), updatedExpense, { merge: true });
+      setSyncToast({ message: `Expense voucher #${updatedExpense.voucherNo} updated in Firestore!`, type: 'success' });
+      setIsEditExpenseModalOpen(false);
+      setEditingExpense(null);
+      setTimeout(() => fetchSheetSummary(), 1500);
+    } catch (err: any) {
+      alert('Error updating expense: ' + err.message);
     }
   };
 
@@ -727,7 +961,7 @@ export default function App() {
         {/* Tab Views */}
         {activeTab === 'dashboard' && (
           <>
-            <StatsCards stats={stats} monthlyFee={config.monthlyFee} />
+            <StatsCards stats={stats} monthlyFee={config.monthlyFee} receipts={receipts} students={students} />
             <DashboardView
               config={config}
               stats={stats}
@@ -749,6 +983,16 @@ export default function App() {
                 setIsPaymentModalOpen(true);
               }}
               onOpenPinModal={() => setIsAdminPinModalOpen(true)}
+              onEditReceipt={(receipt) => {
+                setEditingReceipt(receipt);
+                setIsEditReceiptModalOpen(true);
+              }}
+              onDeleteReceipt={handleDeleteReceipt}
+              onEditExpense={(expense) => {
+                setEditingExpense(expense);
+                setIsEditExpenseModalOpen(true);
+              }}
+              onDeleteExpense={handleDeleteExpense}
             />
           </>
         )}
@@ -794,6 +1038,11 @@ export default function App() {
               setSelectedReceipt(null);
               setIsReceiptModalOpen(true);
             }}
+            onEditExpense={(expense) => {
+              setEditingExpense(expense);
+              setIsEditExpenseModalOpen(true);
+            }}
+            onDeleteExpense={handleDeleteExpense}
           />
         )}
 
@@ -870,6 +1119,26 @@ export default function App() {
         adminPin={adminPinInput}
         onSaveConfig={handleSaveConfig}
         onTriggerSync={(url, type) => handleSyncGoogleSheet(url || config?.googleSheetPaymentsUrl || '', type || 'all')}
+      />
+
+      <EditReceiptModal
+        receipt={editingReceipt}
+        isOpen={isEditReceiptModalOpen}
+        onClose={() => {
+          setIsEditReceiptModalOpen(false);
+          setEditingReceipt(null);
+        }}
+        onSubmit={handleUpdateReceipt}
+      />
+
+      <EditExpenseModal
+        expense={editingExpense}
+        isOpen={isEditExpenseModalOpen}
+        onClose={() => {
+          setIsEditExpenseModalOpen(false);
+          setEditingExpense(null);
+        }}
+        onSubmit={handleUpdateExpense}
       />
 
     </div>

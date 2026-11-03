@@ -1,4 +1,5 @@
 import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from '../types';
+import { compareStudents } from './studentSorter';
 
 export function getMonthsRange(startYYYYMM: string, endYYYYMM: string): string[] {
   const months: string[] = [];
@@ -86,6 +87,9 @@ export function calculateFundDetails(
     };
   });
 
+  // Sort studentStatuses according to custom student sorting rules
+  studentStatuses.sort((a, b) => compareStudents(a.student, b.student));
+
   // Calculate totals
   const totalCollected = (receipts || []).reduce((acc, r) => acc + Number(r.amount || 0), 0);
   const totalSpent = (expenses || []).reduce((acc, e) => acc + Number(e.amount || 0), 0);
@@ -104,6 +108,25 @@ export function calculateFundDetails(
   const thisMonthExpensesList = (expenses || []).filter((e) => e.date && e.date.startsWith(currentMonth));
   const thisMonthSpent = thisMonthExpensesList.reduce((acc, e) => acc + Number(e.amount || 0), 0);
 
+  // Count unique active students who made AT LEAST ONE payment in current/recent month
+  const activeStudentRolls = new Set(
+    (students || [])
+      .filter((s) => s.status === 'active')
+      .map((s) => s.roll.trim().toLowerCase())
+  );
+  const currentMonthPaidStudentRolls = new Set<string>();
+  (receipts || []).forEach((r) => {
+    const isDateMatch = Boolean(r.paymentDate && r.paymentDate.startsWith(currentMonth));
+    const isMonthMatch = Array.isArray(r.monthsPaid) && r.monthsPaid.includes(currentMonth);
+    if (isDateMatch || isMonthMatch) {
+      const roll = (r.studentRoll || r.studentId || '').trim().toLowerCase();
+      if (roll && (activeStudentRolls.size === 0 || activeStudentRolls.has(roll))) {
+        currentMonthPaidStudentRolls.add(roll);
+      }
+    }
+  });
+  const currentMonthPaidCount = currentMonthPaidStudentRolls.size;
+
   const stats: FundStats = {
     totalCollected,
     totalSpent,
@@ -115,6 +138,7 @@ export function calculateFundDetails(
     currentMonth,
     thisMonthCollected,
     thisMonthSpent,
+    currentMonthPaidCount,
   };
 
   return { studentStatuses, stats, allTargetMonths };

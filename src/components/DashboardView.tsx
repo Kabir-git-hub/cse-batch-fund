@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ResponsiveContainer,
   BarChart,
@@ -10,7 +10,7 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import { Receipt, ArrowDownRight, TrendingUp, PieChart as PieChartIcon } from 'lucide-react';
+import { Receipt, ArrowDownRight, TrendingUp, PieChart as PieChartIcon, ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { BatchConfig, PaymentReceipt, Expense, FundStats } from '../types';
 
 interface DashboardViewProps {
@@ -23,6 +23,10 @@ interface DashboardViewProps {
   onSelectExpense: (expense: Expense) => void;
   onOpenPaymentModal: () => void;
   onOpenPinModal: () => void;
+  onEditReceipt?: (receipt: PaymentReceipt) => void;
+  onDeleteReceipt?: (receipt: PaymentReceipt) => void;
+  onEditExpense?: (expense: Expense) => void;
+  onDeleteExpense?: (expense: Expense) => void;
 }
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#64748b'];
@@ -37,7 +41,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onSelectExpense,
   onOpenPaymentModal,
   onOpenPinModal,
+  onEditReceipt,
+  onDeleteReceipt,
+  onEditExpense,
+  onDeleteExpense,
 }) => {
+  // Client-side pagination for receipts and expenses (max 5 per page)
+  const ITEMS_PER_PAGE = 5;
+  const [receiptPage, setReceiptPage] = useState(1);
+  const [expensePage, setExpensePage] = useState(1);
+
+  const totalReceiptPages = Math.max(1, Math.ceil(receipts.length / ITEMS_PER_PAGE));
+  const currentReceiptPage = Math.min(receiptPage, totalReceiptPages);
+  const paginatedReceipts = receipts.slice(
+    (currentReceiptPage - 1) * ITEMS_PER_PAGE,
+    currentReceiptPage * ITEMS_PER_PAGE
+  );
+
+  const totalExpensePages = Math.max(1, Math.ceil(expenses.length / ITEMS_PER_PAGE));
+  const currentExpensePage = Math.min(expensePage, totalExpensePages);
+  const paginatedExpenses = expenses.slice(
+    (currentExpensePage - 1) * ITEMS_PER_PAGE,
+    currentExpensePage * ITEMS_PER_PAGE
+  );
+
   // Aggregate monthly collection chart data
   const monthlyDataMap: Record<string, { month: string; collection: number; expense: number }> = {};
 
@@ -191,7 +218,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="divide-y divide-slate-100">
-            {receipts.slice(0, 5).map((r) => (
+            {paginatedReceipts.map((r) => (
               <div
                 key={r.id}
                 onClick={() => onSelectReceipt(r)}
@@ -213,9 +240,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                 </div>
 
-                <div className="text-right shrink-0">
-                  <div className="font-extrabold text-emerald-600 font-mono text-sm sm:text-base">+ ৳{r.amount}</div>
-                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">{r.receiptNo}</div>
+                <div className="text-right shrink-0 flex items-center gap-2">
+                  <div>
+                    <div className="font-extrabold text-emerald-600 font-mono text-sm sm:text-base">+ ৳{r.amount}</div>
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{r.receiptNo}</div>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      {onEditReceipt && (
+                        <button
+                          type="button"
+                          onClick={() => onEditReceipt(r)}
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                          title="Edit Receipt"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {onDeleteReceipt && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteReceipt(r)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="Delete Receipt"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -226,6 +279,51 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             )}
           </div>
+
+          {/* Receipts Pagination Controls */}
+          {receipts.length > ITEMS_PER_PAGE && (
+            <div className="pt-3 mt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span className="font-medium text-slate-500">
+                Showing{' '}
+                <span className="font-bold text-slate-800">
+                  {(currentReceiptPage - 1) * ITEMS_PER_PAGE + 1}
+                </span>
+                -
+                <span className="font-bold text-slate-800">
+                  {Math.min(currentReceiptPage * ITEMS_PER_PAGE, receipts.length)}
+                </span>{' '}
+                of <span className="font-bold text-slate-800">{receipts.length}</span>
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setReceiptPage((p) => Math.max(1, p - 1))}
+                  disabled={currentReceiptPage === 1}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                  aria-label="Previous receipts page"
+                  title="Previous page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <span className="px-2.5 py-1 rounded-md bg-slate-50 border border-slate-200/80 font-mono text-[11px] font-bold text-slate-700">
+                  Page {currentReceiptPage} of {totalReceiptPages}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setReceiptPage((p) => Math.min(totalReceiptPages, p + 1))}
+                  disabled={currentReceiptPage >= totalReceiptPages}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                  aria-label="Next receipts page"
+                  title="Next page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Recent Expense Vouchers */}
@@ -241,7 +339,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="divide-y divide-slate-100">
-            {expenses.slice(0, 5).map((e) => (
+            {paginatedExpenses.map((e) => (
               <div
                 key={e.id}
                 onClick={() => onSelectExpense(e)}
@@ -260,9 +358,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
                 </div>
 
-                <div className="text-right shrink-0">
-                  <div className="font-extrabold text-rose-600 font-mono text-sm sm:text-base">- ৳{e.amount}</div>
-                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">{e.voucherNo}</div>
+                <div className="text-right shrink-0 flex items-center gap-2">
+                  <div>
+                    <div className="font-extrabold text-rose-600 font-mono text-sm sm:text-base">- ৳{e.amount}</div>
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{e.voucherNo}</div>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+                      {onEditExpense && (
+                        <button
+                          type="button"
+                          onClick={() => onEditExpense(e)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="Edit Expense"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {onDeleteExpense && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteExpense(e)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="Delete Expense"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -273,6 +397,51 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             )}
           </div>
+
+          {/* Expenses Pagination Controls */}
+          {expenses.length > ITEMS_PER_PAGE && (
+            <div className="pt-3 mt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span className="font-medium text-slate-500">
+                Showing{' '}
+                <span className="font-bold text-slate-800">
+                  {(currentExpensePage - 1) * ITEMS_PER_PAGE + 1}
+                </span>
+                -
+                <span className="font-bold text-slate-800">
+                  {Math.min(currentExpensePage * ITEMS_PER_PAGE, expenses.length)}
+                </span>{' '}
+                of <span className="font-bold text-slate-800">{expenses.length}</span>
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setExpensePage((p) => Math.max(1, p - 1))}
+                  disabled={currentExpensePage === 1}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                  aria-label="Previous expenses page"
+                  title="Previous page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <span className="px-2.5 py-1 rounded-md bg-slate-50 border border-slate-200/80 font-mono text-[11px] font-bold text-slate-700">
+                  Page {currentExpensePage} of {totalExpensePages}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setExpensePage((p) => Math.min(totalExpensePages, p + 1))}
+                  disabled={currentExpensePage >= totalExpensePages}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                  aria-label="Next expenses page"
+                  title="Next page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       </div>

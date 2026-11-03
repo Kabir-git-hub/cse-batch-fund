@@ -7,6 +7,7 @@ export interface Student {
   joinedMonth: string; // e.g. "2025-01"
   totalPaid?: number;
   dueAmount?: number;
+  slNo?: number | string | null;
 }
 
 export interface PaymentReceipt {
@@ -77,6 +78,7 @@ export interface FundStats {
   currentMonth: string; // YYYY-MM
   thisMonthCollected: number;
   thisMonthSpent: number;
+  currentMonthPaidCount?: number;
 }
 
 export interface FundDataResponse {

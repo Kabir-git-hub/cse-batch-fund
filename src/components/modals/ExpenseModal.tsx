@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Plus, Receipt, DollarSign, Calendar, Tag, Link as LinkIcon } from 'lucide-react';
 import { BatchConfig } from '../../types';
+import { auth } from '../../firebase';
 
 interface ExpenseModalProps {
   config: BatchConfig;
@@ -15,11 +16,16 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   onClose,
   onSubmit,
 }) => {
+  const getAdminName = () => {
+    const user = auth.currentUser;
+    return user?.displayName || user?.email || localStorage.getItem('sec_admin_email') || config?.managerName || 'Md. Rajib Hossain Sunny (CR)';
+  };
+
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<'Event' | 'Academic' | 'Sports' | 'Lab' | 'Welfare' | 'Contingency' | 'Farewell' | 'Other'>('Event');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [spentBy, setSpentBy] = useState(config?.managerName || 'Md. Rajib Hossain Sunny (CR)');
+  const [spentBy, setSpentBy] = useState(() => getAdminName());
   const [referenceDocUrl, setReferenceDocUrl] = useState('');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -32,7 +38,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setAmount('');
       setCategory('Event');
       setDate(new Date().toISOString().split('T')[0]);
-      setSpentBy(config?.managerName || 'Md. Rajib Hossain Sunny (CR)');
+      setSpentBy(getAdminName());
       setReferenceDocUrl('');
       setNotes('');
     }
@@ -43,7 +49,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !amount) return;
+    if (isSubmitting || !title || !amount) return;
 
     setIsSubmitting(true);
     try {
@@ -155,7 +161,9 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                 type="text"
                 value={spentBy}
                 onChange={(e) => setSpentBy(e.target.value)}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                disabled
+                readOnly
+                className="w-full px-3.5 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-medium text-slate-600 cursor-not-allowed"
               />
             </div>
           </div>
