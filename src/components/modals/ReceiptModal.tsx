@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Printer, CheckCircle2, ShieldCheck, Download, ExternalLink, Calendar, Phone, CreditCard } from 'lucide-react';
 import { PaymentReceipt, Expense, BatchConfig } from '../../types';
 import { SecLogo } from '../SecLogo';
+import { formatPaymentDateTime } from '../../utils/dateFormatter';
 
 interface ReceiptModalProps {
   config: BatchConfig;
@@ -141,8 +142,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden my-auto max-h-[90vh] flex flex-col animate-in fade-in zoom-in duration-200">
+    <div
+      className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden my-auto max-h-[90vh] flex flex-col animate-in fade-in zoom-in duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Top bar controls - Sticky top so Close (X) button is always visible */}
         <div className="bg-slate-900 text-white p-4 flex items-center justify-between border-b border-slate-800 print:hidden shrink-0 z-10">
@@ -209,8 +216,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                   <span className="font-bold text-slate-900 text-sm">{receipt.receiptNo}</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-slate-500 block">DATE:</span>
-                  <span className="font-bold text-slate-900">{receipt.paymentDate}</span>
+                  <span className="text-slate-500 block">DATE & TIME:</span>
+                  <span className="font-bold text-slate-900 font-mono text-[11px] sm:text-xs">
+                    {formatPaymentDateTime(receipt.paymentDate, receipt.id)}
+                  </span>
                 </div>
               </div>
 
@@ -263,7 +272,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Payment Verified
                 </div>
                 <div className="text-right">
-                  <span className="text-[11px] text-slate-400 block">Collector / CR:</span>
+                  <span className="text-[11px] text-slate-400 block">AUTHORIZED SPENT BY</span>
                   <span className="font-bold text-slate-900">{receipt.collectorName || '—'}</span>
                 </div>
               </div>
@@ -279,8 +288,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                   <span className="font-bold text-slate-900 text-sm">{expense.voucherNo}</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-rose-700 block">EXPENSE DATE:</span>
-                  <span className="font-bold text-slate-900">{expense.date}</span>
+                  <span className="text-rose-700 block">EXPENSE DATE & TIME:</span>
+                  <span className="font-bold text-slate-900">{formatPaymentDateTime(expense.date || expense.expenseDate || expense.createdAt, expense.id)}</span>
                 </div>
               </div>
 
@@ -295,7 +304,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                     <span className="font-bold text-rose-700">{expense.category}</span>
                   </div>
                   <div className="text-right">
-                    <span className="text-slate-500 block">AUTHORIZED SPENT BY (CR):</span>
+                    <span className="text-slate-500 block">AUTHORIZED SPENT BY:</span>
                     <span className="font-bold text-slate-900">{expense.spentBy}</span>
                   </div>
                 </div>
@@ -335,9 +344,32 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
           {/* Footer note */}
           <div className="text-center text-[10px] text-slate-400 border-t border-slate-100 pt-3">
-            Developer by Sylhet Engineering College, Department of CSE
+            Developed by Sylhet Engineering College, Department of CSE
           </div>
 
+        </div>
+
+        {/* Bottom Actions Bar - Sticky bottom with prominent Close button */}
+        <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between print:hidden shrink-0">
+          <span className="text-[11px] text-slate-500 font-medium truncate max-w-[50%]">
+            {receipt ? `#${receipt.receiptNo} • ${receipt.studentName}` : `#${expense?.voucherNo} • ${expense?.title}`}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+            >
+              <Printer className="w-3.5 h-3.5" /> Print
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
+            >
+              Close Receipt
+            </button>
+          </div>
         </div>
 
       </div>

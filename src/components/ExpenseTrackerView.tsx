@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Receipt, Plus, Tag, FileText, Search, Pencil, Trash2 } from 'lucide-react';
 import { Expense } from '../types';
+import { formatPaymentDateTime } from '../utils/dateFormatter';
 
 interface ExpenseTrackerViewProps {
   expenses: Expense[];
@@ -126,7 +127,7 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
                     </span>
                   </td>
                   <td className="py-3.5 px-4 sm:px-6 text-xs text-slate-600 font-mono font-medium">
-                    {e.date}
+                    {formatPaymentDateTime(e.date || e.expenseDate || e.createdAt, e.id)}
                   </td>
                   <td className="py-3.5 px-4 sm:px-6 text-xs text-slate-800 font-semibold">
                     {e.spentBy}

@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { Receipt, ArrowDownRight, TrendingUp, PieChart as PieChartIcon, ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { BatchConfig, PaymentReceipt, Expense, FundStats } from '../types';
+import { formatPaymentDateTime } from '../utils/dateFormatter';
 
 interface DashboardViewProps {
   config: BatchConfig;
@@ -232,7 +233,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </span>
                   </div>
                   <div className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
-                    <span>{r.paymentDate}</span>
+                    <span className="font-mono text-[11px] text-slate-600 font-medium">{formatPaymentDateTime(r.paymentDate, r.id)}</span>
                     <span className="text-slate-300">•</span>
                     <span className="text-emerald-700 font-semibold">{r.monthsPaid?.length} Months ({r.monthsPaid?.slice(0, 2).join(', ')}{r.monthsPaid?.length > 2 ? '...' : ''})</span>
                     <span className="text-slate-300">•</span>
@@ -352,7 +353,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       {e.category}
                     </span>
                     <span className="text-slate-300">•</span>
-                    <span>{e.date}</span>
+                    <span className="font-mono text-[11px] text-slate-600 font-medium">{formatPaymentDateTime(e.date || e.expenseDate || e.createdAt, e.id)}</span>
                     <span className="text-slate-300">•</span>
                     <span className="text-slate-500 truncate">By {e.spentBy}</span>
                   </div>

@@ -32,7 +32,9 @@ export interface Expense {
   title: string;
   amount: number;
   category: 'Event' | 'Academic' | 'Sports' | 'Lab' | 'Welfare' | 'Contingency' | 'Farewell' | 'Other';
-  date: string; // YYYY-MM-DD
+  date: string; // YYYY-MM-DD HH:MM:SS
+  expenseDate?: string;
+  createdAt?: string;
   spentBy: string;
   referenceDocUrl?: string;
   notes?: string;

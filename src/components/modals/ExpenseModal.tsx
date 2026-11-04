@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Plus, Receipt, DollarSign, Calendar, Tag, Link as LinkIcon } from 'lucide-react';
 import { BatchConfig } from '../../types';
 import { auth } from '../../firebase';
+import { getCurrentDateTimeString } from '../../utils/dateFormatter';
 
 interface ExpenseModalProps {
   config: BatchConfig;
@@ -29,6 +30,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const [referenceDocUrl, setReferenceDocUrl] = useState('');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   const prevIsOpen = React.useRef(false);
 
@@ -41,6 +43,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       setSpentBy(getAdminName());
       setReferenceDocUrl('');
       setNotes('');
+      setError('');
+      setIsSubmitting(false);
     }
     prevIsOpen.current = isOpen;
   }, [isOpen, config]);
@@ -49,22 +53,37 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting || !title || !amount) return;
+    const cleanTitle = title.trim();
+    const numAmount = Number(amount);
+    if (isSubmitting || !cleanTitle || isNaN(numAmount) || numAmount <= 0) {
+      setError('Please provide a valid title and positive expense amount.');
+      return;
+    }
 
     setIsSubmitting(true);
+    setError('');
     try {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const timePart = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const cleanDateOnly = (date || '').trim().split(' ')[0] || `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      const finalExpenseDate = `${cleanDateOnly} ${timePart}`;
+
       await onSubmit({
-        title,
-        amount: Number(amount),
+        title: cleanTitle,
+        amount: numAmount,
         category,
-        date,
+        date: finalExpenseDate,
+        expenseDate: finalExpenseDate,
+        createdAt: finalExpenseDate,
         spentBy,
-        referenceDocUrl,
-        notes,
+        referenceDocUrl: referenceDocUrl.trim(),
+        notes: notes.trim(),
       });
       onClose();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('Expense submission error:', err);
+      setError(err?.message || 'Failed to save expense voucher. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -194,21 +213,38 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
             />
           </div>
 
+          {error && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-medium flex items-start gap-2">
+              <span className="font-bold text-rose-800">Error:</span>
+              <span>{error}</span>
+            </div>
+          )}
+
           <div className="pt-2 flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition"
+              disabled={isSubmitting}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer disabled:opacity-50"
             >
               Cancel
             </button>
 
             <button
               type="submit"
-              disabled={isSubmitting || !title || !amount}
-              className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+              disabled={isSubmitting || !title.trim() || !amount || Number(amount) <= 0}
+              className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
             >
-              <Plus className="w-4 h-4" /> Save Expense Voucher
+              {isSubmitting ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Saving Voucher...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" /> Save Expense Voucher
+                </>
+              )}
             </button>
           </div>
         </form>

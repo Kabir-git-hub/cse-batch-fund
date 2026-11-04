@@ -16,10 +16,11 @@ import { GoogleSheetSyncModal } from './components/modals/GoogleSheetSyncModal';
 import { EditReceiptModal } from './components/modals/EditReceiptModal';
 import { EditExpenseModal } from './components/modals/EditExpenseModal';
 import { BatchConfig, Student, PaymentReceipt, Expense, FundStats, StudentFundStatus } from './types';
-import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw } from 'lucide-react';
+import { Loader2, AlertCircle, Sparkles, Building2, RefreshCw, Trash2, X, AlertTriangle } from 'lucide-react';
 import { SecLogo } from './components/SecLogo';
 import { calculateFundDetails } from './utils/fundCalculator';
 import { compareStudents } from './utils/studentSorter';
+import { formatPaymentDateTime } from './utils/dateFormatter';
 import { db, doc, collection, onSnapshot, getDoc, setDoc, updateDoc, deleteDoc, handleFirestoreError, OperationType } from './firebase';
 
 const defaultEmptyConfig: BatchConfig = {
@@ -60,11 +61,6 @@ export default function App() {
   const [studentStatuses, setStudentStatuses] = useState<StudentFundStatus[]>([]);
   const [stats, setStats] = useState<FundStats>(defaultStats);
   const [allTargetMonths, setAllTargetMonths] = useState<string[]>([]);
-  const [sheetSummary, setSheetSummary] = useState<{
-    netBalance: number;
-    totalFund: number;
-    totalExpense: number;
-  } | null>(null);
   
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +159,11 @@ export default function App() {
   const [isEditExpenseModalOpen, setIsEditExpenseModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
+  // Dedicated In-App Confirmation Modal States for Deletion (No window.confirm)
+  const [receiptToDelete, setReceiptToDelete] = useState<PaymentReceipt | null>(null);
+  const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
+  const [isDeletingItem, setIsDeletingItem] = useState(false);
+
   // Quick Sheet Sync State & Handler
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
   const [syncToast, setSyncToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -229,7 +230,7 @@ export default function App() {
     }
   };
 
-  // Rule 4: Real-time calculation with Sheet-Driven Summary for Net Balance, Total Expense, Total Fund
+  // 100% Firebase-driven Real-Time Fund Calculations
   useEffect(() => {
     const { studentStatuses: calculatedStatuses, stats: calculatedStats, allTargetMonths: calculatedMonths } = calculateFundDetails(
       config,
@@ -238,18 +239,10 @@ export default function App() {
       expenses
     );
 
-    // Rule 4: UI Dashboard (Net Balance, Total Expense, Total Fund) does NOT calculate from Firebase;
-    // It fetches directly from the Google Sheet permanent ledger (doGet endpoint)
-    if (sheetSummary) {
-      calculatedStats.netBalance = sheetSummary.netBalance;
-      calculatedStats.totalCollected = sheetSummary.totalFund;
-      calculatedStats.totalSpent = sheetSummary.totalExpense;
-    }
-
     setStudentStatuses(calculatedStatuses);
     setStats(calculatedStats);
     setAllTargetMonths(calculatedMonths);
-  }, [config, students, receipts, expenses, sheetSummary]);
+  }, [config, students, receipts, expenses]);
 
   // Load Data: Firebase Real-Time Listeners (UI Lists) + Google Sheet Permanent Summary (Dashboard)
   useEffect(() => {
@@ -293,7 +286,22 @@ export default function App() {
           snap.forEach((docSnap) => {
             const data = docSnap.data() as Student;
             if (data && (data.roll || data.name)) {
-              map.set(docSnap.id, { ...data, id: docSnap.id });
+              // Deduplicate strictly by canonical roll number to prevent duplicate student cards
+              const cleanRollKey = String(data.roll || docSnap.id).trim().replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+              const existing = map.get(cleanRollKey);
+              if (!existing) {
+                map.set(cleanRollKey, { ...data, id: docSnap.id });
+              } else {
+                // If multiple documents exist with the same roll, merge them
+                const preferredDocId = docSnap.id.startsWith('s_') ? docSnap.id : existing.id;
+                const higherPaid = Math.max(Number(existing.totalPaid || 0), Number(data.totalPaid || 0));
+                map.set(cleanRollKey, {
+                  ...existing,
+                  ...data,
+                  id: preferredDocId,
+                  totalPaid: higherPaid,
+                });
+              }
             }
           });
           const list = Array.from(map.values());
@@ -339,9 +347,18 @@ export default function App() {
           const map = new Map<string, Expense>();
           snap.forEach((docSnap) => {
             const data = docSnap.data() as Expense;
-            if (data && (data.voucherNo || data.title || data.amount !== undefined)) {
-              map.set(docSnap.id, { ...data, id: docSnap.id });
-            }
+            if (!data) return;
+            const amountNum = Number(data.amount);
+            // Ignore only corrupted items with no title AND missing amount
+            if (!data.title && (data.amount === undefined || isNaN(amountNum))) return;
+            // Ignore legacy test placeholder
+            if (data.voucherNo === 'SEC17-EXP-897' && (data.title || '').trim().toLowerCase() === 'ws') return;
+
+            map.set(docSnap.id, {
+              ...data,
+              id: docSnap.id,
+              amount: isNaN(amountNum) ? 0 : amountNum,
+            });
           });
           const list = Array.from(map.values());
           list.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
@@ -357,9 +374,8 @@ export default function App() {
       console.warn('Realtime onSnapshot setup failed:', listenerErr);
     }
 
-    // Initial fetch of full data and permanent sheet summary
+    // Initial fetch of full data
     fetchFundData();
-    fetchSheetSummary();
 
     return () => {
       unsubs.forEach((unsub) => {
@@ -369,61 +385,6 @@ export default function App() {
       });
     };
   }, []);
-
-  // Rule 4: Fetch summary calculations directly from Google Sheet (doGet endpoint) with Cache-Control: no-store
-  const fetchSheetSummary = async () => {
-    const timestamp = new Date().getTime();
-    const webhookUrl = config?.googleSheetWebhookUrl;
-
-    // Direct browser doGet fetch if webhook URL is configured
-    if (webhookUrl && webhookUrl.includes('script.google.com')) {
-      try {
-        const u = `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${timestamp}`;
-        const directRes = await fetch(u, {
-          method: 'GET',
-          cache: 'no-store',
-          headers: {
-            'Cache-Control': 'no-store',
-            'Accept': 'application/json, text/plain, */*',
-          },
-        });
-        if (directRes.ok) {
-          const directJson = await directRes.json();
-          if (directJson && (directJson.totalFund !== undefined || directJson.totalCollected !== undefined || directJson.netBalance !== undefined)) {
-            const tf = Number(directJson.totalFund ?? directJson.totalCollected ?? 0);
-            const te = Number(directJson.totalExpense ?? directJson.totalSpent ?? 0);
-            const nb = Number(directJson.netBalance ?? (tf - te));
-            setSheetSummary({ netBalance: nb, totalFund: tf, totalExpense: te });
-            return;
-          }
-        }
-      } catch (directErr) {
-        // Direct browser GET hit CORS or doGet is not returning JSON, falling back to server proxy
-      }
-    }
-
-    // Server-side proxy with strict Cache-Control: no-store
-    try {
-      const res = await fetch(`/api/fund/sheet-summary?t=${timestamp}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.success) {
-          const tf = Number(data.totalFund ?? data.totalCollected ?? 0);
-          const te = Number(data.totalExpense ?? data.totalSpent ?? 0);
-          const nb = Number(data.netBalance ?? (tf - te));
-          setSheetSummary({ netBalance: nb, totalFund: tf, totalExpense: te });
-        }
-      }
-    } catch (err) {
-      console.warn('fetchSheetSummary server notice:', err);
-    }
-  };
 
   // Fetch from Server API (Source of Truth: Google Sheet Mirror) - Strict anti-caching & timestamp cache buster
   const fetchFundData = async (retryCount = 0) => {
@@ -456,9 +417,46 @@ export default function App() {
             }
           }
         }
-        setStudents(Array.isArray(data.students) ? [...data.students].sort(compareStudents) : []);
-        setReceipts(Array.isArray(data.receipts) ? data.receipts : []);
-        setExpenses(Array.isArray(data.expenses) ? data.expenses : []);
+        if (Array.isArray(data.students) && data.students.length > 0) {
+          setStudents((prev) => {
+            const map = new Map<string, Student>();
+            prev.forEach((s) => {
+              const k = String(s.roll || s.id).trim().replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+              map.set(k, s);
+            });
+            data.students.forEach((s: Student) => {
+              const k = String(s.roll || s.id).trim().replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+              if (!map.has(k)) map.set(k, s);
+            });
+            const list = Array.from(map.values());
+            list.sort(compareStudents);
+            return list;
+          });
+        }
+        if (Array.isArray(data.receipts) && data.receipts.length > 0) {
+          setReceipts((prev) => {
+            const map = new Map<string, PaymentReceipt>();
+            prev.forEach((r) => map.set(r.id, r));
+            data.receipts.forEach((r: PaymentReceipt) => {
+              if (r.id && !map.has(r.id)) map.set(r.id, r);
+            });
+            const list = Array.from(map.values());
+            list.sort((a, b) => new Date(b.paymentDate || 0).getTime() - new Date(a.paymentDate || 0).getTime());
+            return list;
+          });
+        }
+        if (Array.isArray(data.expenses) && data.expenses.length > 0) {
+          setExpenses((prev) => {
+            const map = new Map<string, Expense>();
+            prev.forEach((e) => map.set(e.id, e));
+            data.expenses.forEach((e: Expense) => {
+              if (e.id && !map.has(e.id)) map.set(e.id, e);
+            });
+            const list = Array.from(map.values());
+            list.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+            return list;
+          });
+        }
         if (data.studentStatuses) setStudentStatuses(data.studentStatuses);
         if (data.stats) setStats(data.stats);
         if (data.allTargetMonths) setAllTargetMonths(data.allTargetMonths);
@@ -487,10 +485,13 @@ export default function App() {
     return false;
   };
 
-  // 1. Submit Payment Receipt: Firebase FIRST -> Google Sheet SECOND -> Backend
+  // 1. Submit Payment Receipt: Firebase FIRST -> UI Instantly -> Google Sheet & Server Background
   const handleAddPayment = async (paymentData: any) => {
+    // Immediately close PaymentModal so user never experiences lag or overlapping popups
+    setIsPaymentModalOpen(false);
+
     try {
-      const receiptId = 'r_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+      const receiptId = paymentData.id || ('r_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
       const student = students.find((s) => s.roll === paymentData.studentRoll || s.id === paymentData.studentId);
       const studentRoll = paymentData.studentRoll || student?.roll || '';
       const studentName = paymentData.studentName || student?.name || 'Student ' + studentRoll;
@@ -509,6 +510,8 @@ export default function App() {
       );
       const updatedTotalPaid = currentPaid + paymentAmount;
 
+      const formattedPaymentDate = formatPaymentDateTime(paymentData.paymentDate, receiptId);
+
       const receiptObj: PaymentReceipt = {
         id: receiptId,
         receiptNo: paymentData.receiptNo || ('SEC17-PAY-' + Math.floor(1000 + Math.random() * 9000)),
@@ -517,7 +520,7 @@ export default function App() {
         studentName,
         amount: paymentAmount,
         monthsPaid: Array.isArray(paymentData.monthsPaid) ? paymentData.monthsPaid : (paymentData.monthsPaid ? [paymentData.monthsPaid] : []),
-        paymentDate: paymentData.paymentDate || new Date().toISOString().split('T')[0],
+        paymentDate: formattedPaymentDate,
         paymentMethod: paymentData.paymentMethod || 'bKash',
         transactionRef: paymentData.transactionRef || '',
         collectorName: paymentData.collectorName || 'Batch Admin',
@@ -525,7 +528,13 @@ export default function App() {
         verified: true,
       };
 
-      // STEP 1: Write FIRST to Firebase Firestore (using setDoc)
+      // Optimistically add to local state with deduplication to ensure instant UI responsiveness
+      setReceipts((prev) => {
+        const filtered = prev.filter((r) => r.id !== receiptObj.id && r.receiptNo !== receiptObj.receiptNo);
+        return [receiptObj, ...filtered];
+      });
+
+      // STEP 1: Write directly to Firebase Firestore `receipts` collection
       try {
         await setDoc(doc(db, 'receipts', receiptId), receiptObj, { merge: true });
       } catch (err: any) {
@@ -547,6 +556,12 @@ export default function App() {
           joinedMonth: student?.joinedMonth || config?.startMonth || '2026-08',
           totalPaid: updatedTotalPaid,
         }, { merge: true });
+        // Clean up any duplicate doc if the roll number was previously saved as a bare docId
+        if (studentRoll && studentRoll !== studentDocId) {
+          try {
+            await deleteDoc(doc(db, 'students', studentRoll));
+          } catch (e) {}
+        }
       } catch (studentErr: any) {
         if (studentErr?.code === 'permission-denied' || studentErr?.message?.includes('Missing or insufficient permissions')) {
           handleFirestoreError(studentErr, OperationType.WRITE, `students/${studentDocId}`);
@@ -554,68 +569,50 @@ export default function App() {
         console.warn('Firestore student totalPaid update notice:', studentErr);
       }
 
-      // STEP 2: IMMEDIATELY after successful Firebase write, trigger POST request to Google Apps Script Webhook
-      // Rule 3: For Payments, send: { type: 'payment', receiptNo, studentName, studentRoll, amount, date, collectedBy, notes }
-      const webhookUrl = config?.googleSheetWebhookUrl;
-      if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        try {
-          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${Date.now()}`, {
-            method: 'POST',
-            mode: 'no-cors',
-            cache: 'no-store',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-              type: 'payment',
-              receiptNo: receiptObj.receiptNo,
-              studentName: receiptObj.studentName,
-              studentRoll: receiptObj.studentRoll,
-              amount: receiptObj.amount,
-              date: receiptObj.paymentDate,
-              collectedBy: receiptObj.collectorName || 'Batch Admin',
-              notes: receiptObj.notes || '',
-              roll: receiptObj.studentRoll,
-              totalPaid: updatedTotalPaid,
-              status: newStatus,
-              monthsPaid: receiptObj.monthsPaid,
-            }),
-          });
-        } catch (e) {
-          console.warn('Apps Script doPost payment notice:', e);
-        }
-      }
+      // Reset payment modal state and do not leave modal overlay stuck, matching Expense modal behavior
+      setIsPaymentModalOpen(false);
+      setPreselectedStudent(null);
+      setIsReceiptModalOpen(false);
+      setSelectedReceipt(null);
+      setSelectedExpense(null);
+      setSyncToast({ message: `Payment receipt #${receiptObj.receiptNo} saved successfully!`, type: 'success' });
 
-      // STEP 3: Sync to backend API
-      const res = await fetch(`/api/fund/payments?t=${Date.now()}`, {
+      // STEP 2: Server-side sync triggers Google Sheet Webhook EXACTLY ONCE
+      const currentAdminEmail = adminEmail || localStorage.getItem('sec_admin_email') || '';
+      fetch(`/api/fund/payments?t=${Date.now()}`, {
         method: 'POST',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: adminPinInput, adminEmail, payment: receiptObj }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to record payment');
-
-      // STEP 4: Fetch Sheet permanent summary after giving Sheet write time
-      setTimeout(() => fetchSheetSummary(), 1500);
-
-      if (data.receipt || receiptObj) {
-        setSelectedReceipt(data.receipt || receiptObj);
-        setSelectedExpense(null);
-        setIsReceiptModalOpen(true);
-      }
+        body: JSON.stringify({ pin: adminPinInput, adminEmail: currentAdminEmail, payment: receiptObj }),
+      }).catch((e) => console.warn('Backend payment sync notice:', e));
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      console.error('handleAddPayment error:', err);
+      setSyncToast({ message: 'Error adding payment: ' + (err?.message || 'Unknown error'), type: 'error' });
+      throw err;
     }
   };
 
-  // 2. Submit Expense: Firebase FIRST -> Google Sheet SECOND -> Backend
+  // 2. Submit Expense: Firebase FIRST -> UI Instantly -> Google Sheet & Server Background
   const handleAddExpense = async (expenseData: any) => {
+    // Immediately close ExpenseModal
+    setIsExpenseModalOpen(false);
+
     try {
       const expenseId = expenseData.id || ('e_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
       const voucherNo = expenseData.voucherNo || ('SEC17-EXP-' + Math.floor(100 + Math.random() * 900));
-      const title = expenseData.title || '';
+      const title = (expenseData.title || '').trim();
       const category = expenseData.category || 'Other';
       const amount = Number(expenseData.amount) || 0;
-      const date = expenseData.date || new Date().toISOString().split('T')[0];
+      
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const timePart = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const defaultDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      let finalExpenseDate = expenseData.date || expenseData.expenseDate || `${defaultDate} ${timePart}`;
+      if (!finalExpenseDate.includes(' ')) {
+        finalExpenseDate = `${finalExpenseDate} ${timePart}`;
+      }
+
       const spentBy = expenseData.spentBy || 'Batch Admin';
 
       const expenseObj: Expense = {
@@ -624,11 +621,19 @@ export default function App() {
         title,
         amount,
         category,
-        date,
+        date: finalExpenseDate,
+        expenseDate: finalExpenseDate,
+        createdAt: finalExpenseDate,
         spentBy,
         referenceDocUrl: expenseData.referenceDocUrl || '',
         notes: expenseData.notes || '',
       };
+
+      // Optimistically add to local state with deduplication to ensure instant UI responsiveness
+      setExpenses((prev) => {
+        const filtered = prev.filter((e) => e.id !== expenseObj.id && e.voucherNo !== expenseObj.voucherNo);
+        return [expenseObj, ...filtered];
+      });
 
       // STEP 1: Write FIRST to Firebase Firestore (using setDoc)
       try {
@@ -640,50 +645,24 @@ export default function App() {
         console.warn('Firestore setDoc expenses notice:', err);
       }
 
-      // STEP 2: IMMEDIATELY after successful Firebase write, trigger POST request to Google Apps Script Webhook
-      // Rule 3: For Expenses, send: { type: 'expense', voucherNo, title, amount, date, spentBy, category }
-      const webhookUrl = config?.googleSheetWebhookUrl;
-      if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        try {
-          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${Date.now()}`, {
-            method: 'POST',
-            mode: 'no-cors',
-            cache: 'no-store',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-              type: 'expense',
-              voucherNo: expenseObj.voucherNo,
-              title: expenseObj.title,
-              amount: expenseObj.amount,
-              date: expenseObj.date,
-              spentBy: expenseObj.spentBy,
-              category: expenseObj.category,
-              notes: expenseObj.notes || '',
-            }),
-          });
-        } catch (e) {
-          console.warn('Apps Script doPost expense notice:', e);
-        }
-      }
+      setSyncToast({ message: `Expense voucher #${expenseObj.voucherNo} saved successfully!`, type: 'success' });
 
-      // STEP 3: Sync to backend API
-      const res = await fetch(`/api/fund/expenses?t=${Date.now()}`, {
+      // STEP 2: Server-side sync triggers Google Sheet Webhook EXACTLY ONCE
+      const currentAdminEmail = adminEmail || localStorage.getItem('sec_admin_email') || '';
+      fetch(`/api/fund/expenses?t=${Date.now()}`, {
         method: 'POST',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: adminPinInput, adminEmail, expense: expenseObj }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to add expense');
-
-      // STEP 4: Fetch Sheet permanent summary
-      setTimeout(() => fetchSheetSummary(), 1500);
+        body: JSON.stringify({ pin: adminPinInput, adminEmail: currentAdminEmail, expense: expenseObj }),
+      }).catch((e) => console.warn('Backend expense sync notice:', e));
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      console.error('handleAddExpense error:', err);
+      setSyncToast({ message: 'Error adding expense: ' + (err?.message || 'Unknown error'), type: 'error' });
+      throw err;
     }
   };
 
-  // 3. Add / Edit Student: Firebase FIRST -> Google Sheet SECOND -> Backend
+  // 3. Add / Edit Student: Firebase FIRST -> Google Sheet & Server Sync
   const handleAddStudent = async (studentData: any) => {
     try {
       const cleanRollVal = String(studentData.roll || '').trim().replace(/[^0-9a-zA-Z]/g, '');
@@ -707,33 +686,7 @@ export default function App() {
         console.warn('Firestore setDoc students notice:', err);
       }
 
-      // STEP 2: IMMEDIATELY after successful Firebase write, trigger POST request to Google Apps Script Webhook
-      const webhookUrl = config?.googleSheetWebhookUrl;
-      if (webhookUrl && webhookUrl.includes('script.google.com')) {
-        try {
-          await fetch(`${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${Date.now()}`, {
-            method: 'POST',
-            mode: 'no-cors',
-            cache: 'no-store',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
-              type: 'add_student',
-              action: 'add_student',
-              studentRoll: studentObj.roll,
-              roll: studentObj.roll,
-              name: studentObj.name,
-              studentName: studentObj.name,
-              phone: studentObj.phone,
-              status: studentObj.status,
-              joinedMonth: studentObj.joinedMonth,
-            }),
-          });
-        } catch (e) {
-          console.warn('Apps Script doPost add_student notice:', e);
-        }
-      }
-
-      // STEP 3: Write to backend API
+      // STEP 2: Write to backend API which triggers Google Sheet Webhook EXACTLY ONCE
       const res = await fetch(`/api/fund/students?t=${Date.now()}`, {
         method: 'POST',
         cache: 'no-store',
@@ -744,9 +697,8 @@ export default function App() {
       if (!res.ok) throw new Error(data.error || 'Failed to save student');
 
       setSyncToast({ message: `Student ${studentData.name} saved successfully!`, type: 'success' });
-      setTimeout(() => fetchSheetSummary(), 1500);
     } catch (err: any) {
-      alert('Error saving student: ' + err.message);
+      setSyncToast({ message: 'Error saving student: ' + (err?.message || 'Unknown error'), type: 'error' });
     }
   };
 
@@ -794,17 +746,34 @@ export default function App() {
 
       setSyncToast({ message: `Student ${student.name} (${student.roll}) removed from Firebase! Sheet ledger preserved.`, type: 'success' });
     } catch (err: any) {
-      alert('Error deleting student: ' + err.message);
+      setSyncToast({ message: 'Error deleting student: ' + (err?.message || 'Unknown error'), type: 'error' });
     }
   };
 
-  // 5. Delete Receipt (Firestore 'receipts' collection & recalculate student totalPaid)
-  const handleDeleteReceipt = async (receipt: PaymentReceipt) => {
-    if (!window.confirm(`Are you sure you want to delete receipt #${receipt.receiptNo} (${receipt.studentName} - ৳${receipt.amount})?`)) {
-      return;
-    }
+  // 5. Delete Receipt (Opens in-app confirmation modal, executes deleteDoc in Firestore & recalculates student totalPaid)
+  const handleDeleteReceipt = (receipt: PaymentReceipt) => {
+    setReceiptToDelete(receipt);
+  };
+
+  const confirmDeleteReceipt = async () => {
+    if (!receiptToDelete) return;
+    const receipt = receiptToDelete;
+    setIsDeletingItem(true);
     try {
-      await deleteDoc(doc(db, 'receipts', receipt.id));
+      // 1. Optimistically update local receipts state immediately so UI updates instantly
+      setReceipts((prev) => prev.filter((r) => r.id !== receipt.id));
+
+      // 2. Delete document from Firestore `receipts` collection
+      try {
+        await deleteDoc(doc(db, 'receipts', receipt.id));
+      } catch (err: any) {
+        if (err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions')) {
+          handleFirestoreError(err, OperationType.DELETE, `receipts/${receipt.id}`);
+        }
+        console.warn('Firestore deleteDoc receipt notice:', err);
+      }
+
+      // 3. Recalculate student totalPaid in Firestore
       const student = students.find((s) => s.roll === receipt.studentRoll || s.id === receipt.studentId);
       if (student) {
         const studentDocId = student.id || ('s_' + student.roll.trim().replace(/[^0-9a-zA-Z]/g, ''));
@@ -813,10 +782,22 @@ export default function App() {
         await setDoc(doc(db, 'students', studentDocId), { totalPaid: newTotalPaid }, { merge: true });
       }
 
+      // 4. Background server sync
+      const currentAdminEmail = adminEmail || localStorage.getItem('sec_admin_email') || '';
+      fetch(`/api/fund/payments/${encodeURIComponent(receipt.id)}?t=${Date.now()}`, {
+        method: 'DELETE',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: adminPinInput, adminEmail: currentAdminEmail }),
+      }).catch((e) => console.warn('Backend payment delete sync notice:', e));
+
       setSyncToast({ message: `Receipt #${receipt.receiptNo} deleted from Firestore!`, type: 'success' });
-      setTimeout(() => fetchSheetSummary(), 1500);
+      setReceiptToDelete(null);
     } catch (err: any) {
-      alert('Error deleting receipt: ' + err.message);
+      console.error('Error deleting receipt:', err);
+      setSyncToast({ message: 'Error deleting receipt: ' + (err?.message || 'Unknown error'), type: 'error' });
+    } finally {
+      setIsDeletingItem(false);
     }
   };
 
@@ -835,23 +816,50 @@ export default function App() {
       setSyncToast({ message: `Receipt #${updatedReceipt.receiptNo} updated in Firestore!`, type: 'success' });
       setIsEditReceiptModalOpen(false);
       setEditingReceipt(null);
-      setTimeout(() => fetchSheetSummary(), 1500);
     } catch (err: any) {
-      alert('Error updating receipt: ' + err.message);
+      setSyncToast({ message: 'Error updating receipt: ' + (err?.message || 'Unknown error'), type: 'error' });
     }
   };
 
-  // 7. Delete Expense (Firestore 'expenses' collection)
-  const handleDeleteExpense = async (expense: Expense) => {
-    if (!window.confirm(`Are you sure you want to delete expense voucher #${expense.voucherNo} ("${expense.title}")?`)) {
-      return;
-    }
+  // 7. Delete Expense (Opens in-app confirmation modal, executes deleteDoc in Firestore)
+  const handleDeleteExpense = (expense: Expense) => {
+    setExpenseToDelete(expense);
+  };
+
+  const confirmDeleteExpense = async () => {
+    if (!expenseToDelete) return;
+    const expense = expenseToDelete;
+    setIsDeletingItem(true);
     try {
-      await deleteDoc(doc(db, 'expenses', expense.id));
+      // 1. Optimistically update local expenses state immediately so UI updates instantly
+      setExpenses((prev) => prev.filter((e) => e.id !== expense.id));
+
+      // 2. Delete document from Firestore `expenses` collection
+      try {
+        await deleteDoc(doc(db, 'expenses', expense.id));
+      } catch (err: any) {
+        if (err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions')) {
+          handleFirestoreError(err, OperationType.DELETE, `expenses/${expense.id}`);
+        }
+        console.warn('Firestore deleteDoc expense notice:', err);
+      }
+
+      // 3. Background server sync
+      const currentAdminEmail = adminEmail || localStorage.getItem('sec_admin_email') || '';
+      fetch(`/api/fund/expenses/${encodeURIComponent(expense.id)}?t=${Date.now()}`, {
+        method: 'DELETE',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: adminPinInput, adminEmail: currentAdminEmail }),
+      }).catch((e) => console.warn('Backend expense delete sync notice:', e));
+
       setSyncToast({ message: `Expense voucher #${expense.voucherNo} deleted from Firestore!`, type: 'success' });
-      setTimeout(() => fetchSheetSummary(), 1500);
+      setExpenseToDelete(null);
     } catch (err: any) {
-      alert('Error deleting expense: ' + err.message);
+      console.error('Error deleting expense:', err);
+      setSyncToast({ message: 'Error deleting expense: ' + (err?.message || 'Unknown error'), type: 'error' });
+    } finally {
+      setIsDeletingItem(false);
     }
   };
 
@@ -862,9 +870,8 @@ export default function App() {
       setSyncToast({ message: `Expense voucher #${updatedExpense.voucherNo} updated in Firestore!`, type: 'success' });
       setIsEditExpenseModalOpen(false);
       setEditingExpense(null);
-      setTimeout(() => fetchSheetSummary(), 1500);
     } catch (err: any) {
-      alert('Error updating expense: ' + err.message);
+      setSyncToast({ message: 'Error updating expense: ' + (err?.message || 'Unknown error'), type: 'error' });
     }
   };
 
@@ -1009,7 +1016,10 @@ export default function App() {
                 setSelectedExpense(null);
                 setIsReceiptModalOpen(true);
               } else {
-                alert(`Roll ${status.student.roll} (${status.student.name}) has total paid ৳${status.totalPaid} and ${status.totalMonthsDue} months due.`);
+                setSyncToast({
+                  message: `Roll ${status.student.roll} (${status.student.name}): Total Paid ৳${status.totalPaid}, ${status.totalMonthsDue} months due.`,
+                  type: 'info' as any,
+                });
               }
             }}
             onOpenPaymentModalForStudent={(student) => {
@@ -1078,7 +1088,10 @@ export default function App() {
         allTargetMonths={allTargetMonths}
         studentStatuses={studentStatuses}
         isOpen={isPaymentModalOpen}
-        onClose={() => setIsPaymentModalOpen(false)}
+        onClose={() => {
+          setIsPaymentModalOpen(false);
+          setPreselectedStudent(null);
+        }}
         onSubmit={handleAddPayment}
       />
 
@@ -1101,7 +1114,11 @@ export default function App() {
         receipt={selectedReceipt}
         expense={selectedExpense}
         isOpen={isReceiptModalOpen}
-        onClose={() => setIsReceiptModalOpen(false)}
+        onClose={() => {
+          setIsReceiptModalOpen(false);
+          setSelectedReceipt(null);
+          setSelectedExpense(null);
+        }}
         isAdmin={isAdmin}
       />
 
@@ -1140,6 +1157,169 @@ export default function App() {
         }}
         onSubmit={handleUpdateExpense}
       />
+
+      {/* Delete Payment Receipt Confirmation Modal (No window.confirm, 100% iframe-safe) */}
+      {receiptToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl p-5 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-rose-50 text-rose-600 rounded-xl border border-rose-100">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">Delete Payment Receipt?</h3>
+                  <p className="text-[11px] text-slate-400 font-mono">#{receiptToDelete.receiptNo}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReceiptToDelete(null)}
+                disabled={isDeletingItem}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-600 leading-relaxed">
+              <p>
+              </p>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1 font-mono text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Student:</span>
+                  <span className="font-bold text-slate-800">{receiptToDelete.studentName} ({receiptToDelete.studentRoll})</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Amount:</span>
+                  <span className="font-extrabold text-emerald-600 font-sans">৳{receiptToDelete.amount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Months Paid:</span>
+                  <span className="text-slate-700">{(receiptToDelete.monthsPaid || []).join(', ') || 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-2.5 bg-rose-50 rounded-xl border border-rose-100 text-[11px] text-rose-800 font-medium">
+              ⚠️ Are you sure you want to permanently delete receipt.
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setReceiptToDelete(null)}
+                disabled={isDeletingItem}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteReceipt}
+                disabled={isDeletingItem}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingItem ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Confirm Delete
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Expense Voucher Confirmation Modal (No window.confirm, 100% iframe-safe) */}
+      {expenseToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl p-5 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-rose-50 text-rose-600 rounded-xl border border-rose-100">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">Delete Expense Voucher?</h3>
+                  <p className="text-[11px] text-slate-400 font-mono">#{expenseToDelete.voucherNo}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpenseToDelete(null)}
+                disabled={isDeletingItem}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-600 leading-relaxed">
+              <p>
+                Are you sure you want to permanently delete expense voucher <strong className="text-slate-900">#{expenseToDelete.voucherNo}</strong>?
+              </p>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1 font-mono text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Title:</span>
+                  <span className="font-bold text-slate-800 line-clamp-1">{expenseToDelete.title}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Amount:</span>
+                  <span className="font-extrabold text-rose-600 font-sans">- ৳{expenseToDelete.amount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Category:</span>
+                  <span className="text-slate-700">{expenseToDelete.category}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Spent By:</span>
+                  <span className="text-slate-700">{expenseToDelete.spentBy}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-2.5 bg-rose-50 rounded-xl border border-rose-100 text-[11px] text-rose-800 font-medium">
+              ⚠️ This will remove the voucher from Firestore and automatically update the net cash balance.
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setExpenseToDelete(null)}
+                disabled={isDeletingItem}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteExpense}
+                disabled={isDeletingItem}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingItem ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Confirm Delete
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

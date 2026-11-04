@@ -70,7 +70,33 @@ async function loadDBAsync(): Promise<DBStructure> {
       ? (configSnap.data() as BatchConfig)
       : { ...defaultEmptyConfig };
 
-    let students: Student[] = studentsSnap.docs.map((d) => d.data() as Student);
+    // Deduplicate students strictly by canonical roll number to eliminate duplicates
+    const studentMap = new Map<string, Student>();
+    for (const d of studentsSnap.docs) {
+      const data = d.data() as Student;
+      if (!data || (!data.roll && !data.name)) continue;
+      const cleanRollKey = String(data.roll || d.id).trim().replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+      const existing = studentMap.get(cleanRollKey);
+      if (!existing) {
+        studentMap.set(cleanRollKey, { ...data, id: d.id });
+      } else {
+        // Prefer canonical ID with 's_' prefix
+        const preferredId = d.id.startsWith('s_') ? d.id : existing.id;
+        const higherPaid = Math.max(Number(existing.totalPaid || 0), Number(data.totalPaid || 0));
+        studentMap.set(cleanRollKey, {
+          ...existing,
+          ...data,
+          id: preferredId,
+          totalPaid: higherPaid,
+        });
+        // Delete redundant duplicate document from Firestore
+        const redundantId = d.id.startsWith('s_') ? existing.id : d.id;
+        if (redundantId && redundantId !== preferredId) {
+          deleteFirestoreDoc('students', redundantId);
+        }
+      }
+    }
+    let students: Student[] = Array.from(studentMap.values());
     let receipts: PaymentReceipt[] = receiptsSnap.docs.map((d) => d.data() as PaymentReceipt);
     let expenses: Expense[] = expensesSnap.docs.map((d) => d.data() as Expense);
 
@@ -80,14 +106,27 @@ async function loadDBAsync(): Promise<DBStructure> {
 
     let dirty = false;
 
-    // Clean up any legacy dummy expense from Firestore & memory
+    // Filter out only corrupted or legacy placeholder vouchers (never valid user expenses)
     for (const exp of expenses) {
-      if (exp.title === 'ws' || exp.id?.includes('1786824706078') || exp.voucherNo === 'SEC17-EXP-897') {
-        deleteFirestoreDoc('expenses', exp.id);
+      const cleanTitle = (exp.title || '').trim().toLowerCase();
+      const isCorruptDummy =
+        (exp.voucherNo === 'SEC17-EXP-897' && cleanTitle === 'ws') ||
+        (!cleanTitle && isNaN(Number(exp.amount)));
+
+      if (isCorruptDummy) {
+        if (exp.id) {
+          deleteFirestoreDoc('expenses', exp.id);
+        }
         dirty = true;
       }
     }
-    expenses = expenses.filter((e) => e.title !== 'ws' && !e.id?.includes('1786824706078') && e.voucherNo !== 'SEC17-EXP-897');
+    expenses = expenses.filter((exp) => {
+      const cleanTitle = (exp.title || '').trim().toLowerCase();
+      return !(
+        (exp.voucherNo === 'SEC17-EXP-897' && cleanTitle === 'ws') ||
+        (!cleanTitle && isNaN(Number(exp.amount)))
+      );
+    });
 
     if (!configSnap.exists()) {
       console.log('Initializing database config in Firebase Firestore...');
@@ -752,55 +791,19 @@ async function startServer() {
     });
   });
 
-  // 1.1 Sheet Summary Endpoint: Direct doGet proxy from Google Apps Script Webhook (Permanent Truth Ledger)
-  app.get('/api/fund/sheet-summary', async (req, res) => {
+  // 1.1 Summary Endpoint: Driven 100% by Firebase Firestore State
+  app.get('/api/fund/sheet-summary', (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
 
     const db = loadDB();
-    const webhookUrl = db.config?.googleSheetWebhookUrl || 'https://script.google.com/macros/s/AKfycbz3LZfvJSVokHI5BNv1mSXtBX2EtsP_mIVb1Mp-01sVm1kLHbcEt1VMIt4-7tvifYq3/exec';
-
-    try {
-      const timestamp = Date.now();
-      const u = `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}t=${timestamp}`;
-      const response = await fetch(u, {
-        method: 'GET',
-        headers: {
-          'Cache-Control': 'no-store',
-          'Accept': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const text = await response.text();
-        try {
-          const json = JSON.parse(text);
-          const totalFund = Number(json.totalCollected ?? json.totalFund ?? 0);
-          const totalExpense = Number(json.totalExpense ?? json.totalSpent ?? 0);
-          const netBalance = Number(json.netBalance ?? (totalFund - totalExpense));
-          return res.json({
-            success: true,
-            totalFund,
-            totalExpense,
-            netBalance,
-          });
-        } catch (jsonErr) {
-          console.warn('Sheet summary response was not JSON:', text.slice(0, 100));
-        }
-      }
-    } catch (fetchErr) {
-      console.warn('Failed to fetch from Google Sheet doGet webhook:', fetchErr);
-    }
-
-    // Fallback if Sheet webhook is unreachable
     const { stats } = calculateFundDetails(db);
     return res.json({
       success: true,
       totalFund: stats.totalCollected,
       totalExpense: stats.totalSpent,
       netBalance: stats.netBalance,
-      isFallback: true,
     });
   });
 
@@ -927,8 +930,8 @@ async function startServer() {
     const { payment } = req.body;
     const db = loadDB();
 
-    if (!isAuthorizedAdmin(req.body, db.config)) {
-      return res.status(401).json({ error: 'Access Denied: Authorized Admin Gmail required.' });
+    if (!isAuthorizedAdmin(req, db.config)) {
+      return res.status(401).json({ error: 'Access Denied: Authorized Admin Gmail or PIN required.' });
     }
 
     if (!payment || !payment.studentRoll || !payment.amount || !payment.monthsPaid || payment.monthsPaid.length === 0) {
@@ -950,16 +953,26 @@ async function startServer() {
       return res.status(400).json({ error: `Month(s) ${duplicateMonths.join(', ')} are already paid for this student!` });
     }
 
-    const receiptNo = `SEC17-PAY-${Math.floor(1000 + Math.random() * 9000)}`;
+    const receiptId = payment.id || ('r_' + Date.now());
+    const receiptNo = payment.receiptNo || `SEC17-PAY-${Math.floor(1000 + Math.random() * 9000)}`;
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timePart = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const defaultDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    let finalPaymentDate = payment.paymentDate || `${defaultDate} ${timePart}`;
+    if (!finalPaymentDate.includes(' ')) {
+      finalPaymentDate = `${finalPaymentDate} ${timePart}`;
+    }
+
     const newReceipt: PaymentReceipt = {
-      id: 'r_' + Date.now(),
+      id: receiptId,
       receiptNo,
       studentId: student ? student.id : payment.studentId || 's_custom',
       studentRoll: payment.studentRoll,
       studentName: student ? student.name : payment.studentName || 'Student',
       amount: Number(payment.amount),
       monthsPaid: payment.monthsPaid,
-      paymentDate: payment.paymentDate || new Date().toISOString().split('T')[0],
+      paymentDate: finalPaymentDate,
       paymentMethod: payment.paymentMethod || 'bKash',
       transactionRef: payment.transactionRef || 'TRX-' + Math.floor(Math.random() * 100000),
       collectorName: typeof payment.collectorName === 'string' ? payment.collectorName.trim() : '',
@@ -967,7 +980,12 @@ async function startServer() {
       verified: true,
     };
 
-    db.receipts.unshift(newReceipt);
+    const existingReceiptIdx = db.receipts.findIndex((r) => r.id === newReceipt.id || r.receiptNo === newReceipt.receiptNo);
+    if (existingReceiptIdx >= 0) {
+      db.receipts[existingReceiptIdx] = newReceipt;
+    } else {
+      db.receipts.unshift(newReceipt);
+    }
     saveDB(db);
     saveFirestoreDoc('receipts', newReceipt.id, newReceipt);
 
@@ -981,8 +999,9 @@ async function startServer() {
       student.status = newStatus;
       (student as any).totalPaid = studentTotalPaid;
       saveFirestoreDoc('students', student.id, { ...student, totalPaid: studentTotalPaid, status: newStatus });
+      // Delete redundant duplicate document if the roll number was previously saved as a bare docId
       if (student.roll && student.roll !== student.id) {
-        saveFirestoreDoc('students', student.roll, { ...student, totalPaid: studentTotalPaid, status: newStatus });
+        deleteFirestoreDoc('students', student.roll);
       }
     }
 
@@ -1030,17 +1049,7 @@ async function startServer() {
 
     if (deletedReceipt) {
       deleteFirestoreDoc('receipts', deletedReceipt.id);
-      syncToGoogleSheetWebhook('delete_payment', {
-        action: 'delete_payment',
-        type: 'delete_payment',
-        receiptNo: deletedReceipt.receiptNo,
-        studentRoll: deletedReceipt.studentRoll,
-        roll: deletedReceipt.studentRoll,
-        studentName: deletedReceipt.studentName,
-        name: deletedReceipt.studentName,
-        amount: deletedReceipt.amount,
-        monthsPaid: deletedReceipt.monthsPaid,
-      });
+      // Google Sheet remains a permanent, tamper-proof append-only ledger
     }
 
     const details = calculateFundDetails(db);
@@ -1052,28 +1061,45 @@ async function startServer() {
     const { expense } = req.body;
     const db = loadDB();
 
-    if (!isAuthorizedAdmin(req.body, db.config)) {
-      return res.status(401).json({ error: 'Access Denied: Authorized Admin Gmail required.' });
+    if (!isAuthorizedAdmin(req, db.config)) {
+      return res.status(401).json({ error: 'Access Denied: Authorized Admin Gmail or PIN required.' });
     }
 
     if (!expense || !expense.title || !expense.amount) {
       return res.status(400).json({ error: 'Title and Amount are required for expense.' });
     }
 
-    const voucherNo = `SEC17-EXP-${Math.floor(200 + Math.random() * 800)}`;
+    const expenseId = expense.id || ('e_' + Date.now());
+    const voucherNo = expense.voucherNo || (`SEC17-EXP-${Math.floor(200 + Math.random() * 800)}`);
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timePart = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const defaultDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    let finalExpenseDate = expense.date || expense.expenseDate || `${defaultDate} ${timePart}`;
+    if (!finalExpenseDate.includes(' ')) {
+      finalExpenseDate = `${finalExpenseDate} ${timePart}`;
+    }
+
     const newExpense: Expense = {
-      id: 'e_' + Date.now(),
+      id: expenseId,
       voucherNo,
       title: expense.title,
       amount: Number(expense.amount),
       category: expense.category || 'Event',
-      date: expense.date || new Date().toISOString().split('T')[0],
+      date: finalExpenseDate,
+      expenseDate: finalExpenseDate,
+      createdAt: finalExpenseDate,
       spentBy: expense.spentBy || db.config.managerName,
       referenceDocUrl: expense.referenceDocUrl || '',
       notes: expense.notes || '',
     };
 
-    db.expenses.unshift(newExpense);
+    const existingExpIdx = db.expenses.findIndex((e) => e.id === newExpense.id || e.voucherNo === newExpense.voucherNo);
+    if (existingExpIdx >= 0) {
+      db.expenses[existingExpIdx] = newExpense;
+    } else {
+      db.expenses.unshift(newExpense);
+    }
     saveDB(db);
     saveFirestoreDoc('expenses', newExpense.id, newExpense);
 
@@ -1088,6 +1114,9 @@ async function startServer() {
       category: newExpense.category,
       amount: newExpense.amount,
       date: newExpense.date,
+      expenseDate: newExpense.date,
+      createdAt: newExpense.date,
+      timestamp: newExpense.date,
       spentBy: newExpense.spentBy,
       paidBy: newExpense.spentBy,
       notes: newExpense.notes,
@@ -1118,27 +1147,12 @@ async function startServer() {
         deleteFirestoreDoc('expenses', targetExpense.voucherNo);
       }
       saveDB(db);
-
-      syncToGoogleSheetWebhook('delete_expense', {
-        action: 'delete_expense',
-        type: 'delete_expense',
-        voucherNo: targetExpense.voucherNo,
-        voucher: targetExpense.voucherNo,
-        title: targetExpense.title,
-        amount: targetExpense.amount,
-      });
+      // Google Sheet remains a permanent, tamper-proof append-only ledger
     } else {
       if (id) {
         deleteFirestoreDoc('expenses', id);
         db.expenses = db.expenses.filter((e) => e.id !== id && e.voucherNo !== id);
         saveDB(db);
-
-        syncToGoogleSheetWebhook('delete_expense', {
-          action: 'delete_expense',
-          type: 'delete_expense',
-          voucherNo: id,
-          voucher: id,
-        });
       }
     }
 
@@ -1947,18 +1961,8 @@ async function startServer() {
             }
           }
 
-          // Pass 3: Reconcile db.expenses with Google Sheet 2 (Sheet 2 is the source of truth for active expenses)
-          const now = Date.now();
-          db.expenses = db.expenses.filter((e) => {
-            if (matchedDbExpenseIds.has(e.id)) return true;
-            if (e.id.startsWith('e_') && !e.id.startsWith('e_gs_')) {
-              const timestamp = parseInt(e.id.replace('e_', ''), 10);
-              if (!isNaN(timestamp) && (now - timestamp) < 15000) {
-                return true;
-              }
-            }
-            return false;
-          });
+          // Pass 3: Preserve all existing expenses in db.expenses (Firebase is single source of truth)
+          // Never drop or delete valid user expenses during Google Sheet sync
 
           // Pass 4: Add new expenses from Sheet 2 that do not exist on website
           for (let i = 0; i < sheetExpensesList.length; i++) {

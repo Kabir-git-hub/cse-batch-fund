@@ -28,7 +28,8 @@ export const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
       setTitle(expense.title || '');
       setAmount(String(expense.amount || ''));
       setCategory(expense.category || 'Event');
-      setDate(expense.date || new Date().toISOString().split('T')[0]);
+      const rawDate = expense.date || expense.expenseDate || expense.createdAt || new Date().toISOString().split('T')[0];
+      setDate(rawDate.includes(' ') ? rawDate.split(' ')[0] : rawDate);
       setSpentBy(expense.spentBy || '');
       setNotes(expense.notes || '');
     }
@@ -38,16 +39,25 @@ export const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !amount || Number(amount) <= 0) return;
+    if (isSubmitting || !title || !amount || Number(amount) <= 0) return;
 
     setIsSubmitting(true);
     try {
+      const existingDate = expense.date || expense.expenseDate || '';
+      const originalTime = existingDate.includes(' ') ? existingDate.split(' ')[1] : '';
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const timePart = originalTime || `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const finalDate = date.includes(' ') ? date : `${date} ${timePart}`;
+
       await onSubmit({
         ...expense,
         title,
         amount: Number(amount),
         category,
-        date,
+        date: finalDate,
+        expenseDate: finalDate,
+        createdAt: expense.createdAt || finalDate,
         spentBy,
         notes,
       });

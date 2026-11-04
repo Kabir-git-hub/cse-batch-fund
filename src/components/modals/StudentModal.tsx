@@ -45,7 +45,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!roll.trim() || !name.trim()) return;
+    if (isSubmitting || !roll.trim() || !name.trim()) return;
 
     setIsSubmitting(true);
     try {

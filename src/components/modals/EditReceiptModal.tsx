@@ -24,7 +24,7 @@ export const EditReceiptModal: React.FC<EditReceiptModalProps> = ({
   useEffect(() => {
     if (receipt && isOpen) {
       setAmount(String(receipt.amount || ''));
-      setPaymentDate(receipt.paymentDate || new Date().toISOString().split('T')[0]);
+      setPaymentDate(receipt.paymentDate ? receipt.paymentDate.split(' ')[0] : new Date().toISOString().split('T')[0]);
       setPaymentMethod(receipt.paymentMethod || 'bKash');
       setNotes(receipt.notes || '');
     }
@@ -34,14 +34,25 @@ export const EditReceiptModal: React.FC<EditReceiptModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || Number(amount) <= 0) return;
+    if (isSubmitting || !amount || Number(amount) <= 0) return;
 
     setIsSubmitting(true);
     try {
+      let finalDate = paymentDate;
+      if (!finalDate.includes(' ')) {
+        const existingTime = receipt.paymentDate && receipt.paymentDate.includes(' ')
+          ? receipt.paymentDate.split(' ')[1]
+          : null;
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const timePart = existingTime || `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        finalDate = `${finalDate} ${timePart}`;
+      }
+
       await onSubmit({
         ...receipt,
         amount: Number(amount),
-        paymentDate,
+        paymentDate: finalDate,
         paymentMethod,
         notes,
       });

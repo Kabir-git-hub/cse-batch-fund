@@ -51,6 +51,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [collectorName, setCollectorName] = useState(() => getAdminName());
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   const prevIsOpen = React.useRef(false);
 
@@ -60,6 +61,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setSelectedMonths([]);
       setTransactionRef('');
       setNotes('');
+      setError('');
+      setIsSubmitting(false);
       setPaymentDate(new Date().toISOString().split('T')[0]);
       setCollectorName(getAdminName());
     }
@@ -108,23 +111,32 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     if (isSubmitting || !selectedRoll || selectedMonths.length === 0) return;
 
     setIsSubmitting(true);
+    setError('');
     try {
       const student = students.find((s) => s.roll === selectedRoll);
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const timePart = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const finalPaymentDate = paymentDate && paymentDate.includes(' ')
+        ? paymentDate
+        : `${paymentDate || `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`} ${timePart}`;
+
       await onSubmit({
         studentRoll: selectedRoll,
         studentId: student?.id,
         studentName: student?.name,
         amount: calculatedAmount,
         monthsPaid: selectedMonths,
-        paymentDate,
+        paymentDate: finalPaymentDate,
         paymentMethod,
         transactionRef: transactionRef || `TRX-${Math.floor(Math.random() * 900000 + 100000)}`,
         collectorName,
         notes,
       });
       onClose();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('Payment submission error:', err);
+      setError(err?.message || 'Payment submission failed. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -336,12 +348,20 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             />
           </div>
 
+          {error && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-medium flex items-start gap-2">
+              <span className="font-bold text-rose-800">Error:</span>
+              <span>{error}</span>
+            </div>
+          )}
+
           {/* Submit Action */}
           <div className="pt-2 flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition"
+              disabled={isSubmitting}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer disabled:opacity-50"
             >
               Cancel
             </button>
@@ -349,9 +369,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting || selectedMonths.length === 0}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
             >
-              <Plus className="w-4 h-4" /> Issue Official Receipt
+              {isSubmitting ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Issuing Receipt...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" /> Issue Official Receipt
+                </>
+              )}
             </button>
           </div>
 
