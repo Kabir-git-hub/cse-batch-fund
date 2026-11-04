@@ -1,17 +1,29 @@
-<!DOCTYPE html>
-<html lang="bn">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coming Soon - Fund Tracker</title>
-    <style>
-        body { font-family: sans-serif; text-align: center; padding: 50px; background: #f8fafc; color: #334155; }
-        h1 { color: #0f172a; }
-        p { font-size: 18px; }
-    </style>
-</head>
-<body>
-    <h1>ওয়েবসাইটে রক্ষণাবেক্ষণের কাজ চলছে 🛠️</h1>
-    <p>আমাদের সিস্টেম আপডেট এবং বাগ ফিক্সিংয়ের কাজ চলছে। খুব শীঘ্রই অ্যাপটি পুনরায় চালু করা হবে। সাথে থাকার জন্য ধন্যবাদ!</p>
-</body>
-</html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>অসীমতট (CSE-17 Batch Fund)</title>
+    <link rel="icon" type="image/jpeg" href="https://i.postimg.cc/htGh5FFC/540271483-122132074802921166-1834135919526935801-n.jpg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      (function() {
+        try {
+          var realFetch = window.fetch;
+          var activeFetch = realFetch;
+          Object.defineProperty(window, 'fetch', {
+            get: function() { return activeFetch || realFetch; },
+            set: function(v) { activeFetch = v; },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
