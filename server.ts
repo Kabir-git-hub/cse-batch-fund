@@ -854,7 +854,7 @@ async function startServer() {
     saveFirestoreDoc('students', savedStudent.id, savedStudent);
 
     // Google Sheet Webhook Sync (Add Student)
-    syncToGoogleSheetWebhook('add_student', {
+    await syncToGoogleSheetWebhook('add_student', {
       action: 'add_student',
       type: 'add_student',
       studentRoll: savedStudent.roll,
@@ -926,7 +926,7 @@ async function startServer() {
   app.post('/api/fund/students/delete', handleDeleteStudentRoute);
 
   // 3. Add Payment Receipt (Manager mode)
-  app.post('/api/fund/payments', (req, res) => {
+  app.post('/api/fund/payments', async (req, res) => {
     const { payment } = req.body;
     const db = loadDB();
 
@@ -1006,7 +1006,7 @@ async function startServer() {
     }
 
     // Sync outwards to Google Sheet Webhook if configured
-    syncToGoogleSheetWebhook('payment', {
+    await syncToGoogleSheetWebhook('payment', {
       action: 'payment',
       type: 'payment',
       receiptNo: newReceipt.receiptNo,
@@ -1057,7 +1057,7 @@ async function startServer() {
   });
 
   // 5. Add Expense (Manager mode)
-  app.post('/api/fund/expenses', (req, res) => {
+  app.post('/api/fund/expenses', async (req, res) => {
     const { expense } = req.body;
     const db = loadDB();
 
@@ -1104,7 +1104,7 @@ async function startServer() {
     saveFirestoreDoc('expenses', newExpense.id, newExpense);
 
     // Sync outwards to Google Sheet Webhook if configured
-    syncToGoogleSheetWebhook('expense', {
+    await syncToGoogleSheetWebhook('expense', {
       action: 'expense',
       type: 'expense',
       voucherNo: newExpense.voucherNo,
@@ -1196,19 +1196,13 @@ async function startServer() {
       console.log(`[GoogleSheet Push] Sending ${action} to Google Apps Script Webhook (${webhookUrl})...`);
       const response = await fetch(webhookUrl, {
         method: 'POST',
-        mode: 'no-cors',
         headers: {
           'Content-Type': 'text/plain;charset=utf-8',
         },
         body: JSON.stringify(bodyData),
         redirect: 'follow',
       });
-      let resText = '';
-      try {
-        resText = await response.text();
-      } catch (e) {
-        resText = 'opaque-response';
-      }
+      const resText = await response.text();
       console.log(`[GoogleSheet Push] Response:`, resText);
       return { success: true, response: resText };
     } catch (err: any) {
