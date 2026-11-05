@@ -107,7 +107,7 @@ export default function App() {
           ? configData.allowedAdminEmails.map((e: any) => String(e || '').trim().toLowerCase())
           : [];
         if (!allowedList.includes(cleanEmail)) {
-          throw new Error(`Access Denied! '${emailToVerify}' is not in the authorized admin list in Firestore config.`);
+          throw new Error(`Access Denied! '${emailToVerify}' is not the authorized admin email.`);
         }
       }
 
