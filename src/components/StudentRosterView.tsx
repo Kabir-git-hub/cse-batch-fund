@@ -215,9 +215,9 @@ export const StudentRosterView: React.FC<StudentRosterViewProps> = ({
       </div>
 
       {/* Roster Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-700">
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden w-full max-w-full">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full text-left text-sm text-slate-700 min-w-[600px]">
             <thead className="bg-slate-50/80 text-[11px] uppercase font-extrabold text-slate-500 border-b border-slate-200/80 tracking-wider">
               <tr>
                 <th className="py-3.5 px-4 sm:px-6">Roll No</th>

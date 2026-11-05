@@ -57,9 +57,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="bg-white/95 backdrop-blur-md text-slate-800 border-b border-slate-200/80 sticky top-0 z-30 shadow-xs">
+    <header className="bg-white/95 backdrop-blur-md text-slate-800 border-b border-slate-200/80 sticky top-0 z-30 shadow-xs w-full max-w-full overflow-x-hidden">
       {/* Top Header Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+      <div className="w-full max-w-full px-4 sm:px-6 lg:px-8 py-3">
         <div className="flex items-center justify-between gap-3">
           
           {/* Brand & Institution Info */}

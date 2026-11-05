@@ -935,7 +935,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f9f6] text-slate-900 flex flex-col font-sans">
+    <div className="min-h-screen bg-[#f4f9f6] text-slate-900 flex flex-col font-sans w-full max-w-[100vw] overflow-x-hidden">
       
       {/* Top Navbar */}
       <Navbar
@@ -963,7 +963,7 @@ export default function App() {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 sm:pb-28">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 sm:pb-28 overflow-x-hidden">
         
         {/* Tab Views */}
         {activeTab === 'dashboard' && (

@@ -414,8 +414,8 @@ export const MonthMatrixView: React.FC<MonthMatrixViewProps> = ({
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden relative">
-            <div ref={scrollContainerRef} className="overflow-x-auto scroll-smooth">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden relative w-full max-w-full">
+            <div ref={scrollContainerRef} className="w-full overflow-x-auto scroll-smooth">
               <table className="w-full text-left text-xs border-collapse min-w-[800px]">
                 <thead className="bg-slate-900 text-white font-mono sticky top-0 z-10">
                   <tr>
