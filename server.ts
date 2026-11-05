@@ -1196,13 +1196,19 @@ async function startServer() {
       console.log(`[GoogleSheet Push] Sending ${action} to Google Apps Script Webhook (${webhookUrl})...`);
       const response = await fetch(webhookUrl, {
         method: 'POST',
+        mode: 'no-cors',
         headers: {
           'Content-Type': 'text/plain;charset=utf-8',
         },
         body: JSON.stringify(bodyData),
         redirect: 'follow',
       });
-      const resText = await response.text();
+      let resText = '';
+      try {
+        resText = await response.text();
+      } catch (e) {
+        resText = 'opaque-response';
+      }
       console.log(`[GoogleSheet Push] Response:`, resText);
       return { success: true, response: resText };
     } catch (err: any) {
