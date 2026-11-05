@@ -113,7 +113,7 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
       // 3. Email Array Check: verify exact existence in allowedAdminEmails array
       const isAllowed = allowedAdminEmails.includes(cleanEmail);
       if (!isAllowed) {
-        throw new Error(`Access Denied! '${userEmail}' is not in the authorized admin list in Firestore config.`);
+        throw new Error(`Access Denied! '${userEmail}' is not the authorized admin email.`);
       }
 
       // 4. Verify email with system backend to complete session setup
