@@ -714,7 +714,7 @@ async function startServer() {
       if (!isAllowed) {
         return res.json({
           success: false,
-          error: `Access Denied! '${emailToVerify}' is not in the authorized admin list in Firestore config.`,
+          error: `Access Denied! '${emailToVerify}' is not the authorized admin email.`,
         });
       }
 
