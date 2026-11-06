@@ -491,100 +491,112 @@ export default function App() {
     setIsPaymentModalOpen(false);
 
     try {
-      const receiptId = paymentData.id || ('r_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
-      const student = students.find((s) => s.roll === paymentData.studentRoll || s.id === paymentData.studentId);
-      const studentRoll = paymentData.studentRoll || student?.roll || '';
-      const studentName = paymentData.studentName || student?.name || 'Student ' + studentRoll;
-      const paymentAmount = Number(paymentData.amount) || 0;
-      const newStatus = (student?.status || 'active') as 'active' | 'inactive';
+      const paymentsList: any[] = Array.isArray(paymentData) ? paymentData : [paymentData];
+      const newReceiptObjs: PaymentReceipt[] = [];
 
-      // Calculate Payment Accumulation: Combine prior total with new payment
-      const studentStatus = studentStatuses.find((st) => st.student.roll === studentRoll || st.student.id === (student?.id || ''));
-      const receiptsTotal = receipts
-        .filter((r) => r.studentRoll === studentRoll || (student && r.studentId === student.id))
-        .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-      const currentPaid = Math.max(
-        Number(student?.totalPaid || 0),
-        Number(studentStatus?.totalPaid || 0),
-        receiptsTotal
-      );
-      const updatedTotalPaid = currentPaid + paymentAmount;
+      for (const pData of paymentsList) {
+        const receiptId = pData.id || ('r_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
+        const student = students.find((s) => s.roll === pData.studentRoll || s.id === pData.studentId);
+        const studentRoll = pData.studentRoll || student?.roll || '';
+        const studentName = pData.studentName || student?.name || 'Student ' + studentRoll;
+        const paymentAmount = Number(pData.amount) || 0;
+        const newStatus = (student?.status || 'active') as 'active' | 'inactive';
 
-      const formattedPaymentDate = formatPaymentDateTime(paymentData.paymentDate, receiptId);
+        // Calculate Payment Accumulation: Combine prior total with new payment
+        const studentStatus = studentStatuses.find((st) => st.student.roll === studentRoll || st.student.id === (student?.id || ''));
+        const receiptsTotal = receipts
+          .filter((r) => r.studentRoll === studentRoll || (student && r.studentId === student.id))
+          .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+        const currentPaid = Math.max(
+          Number(student?.totalPaid || 0),
+          Number(studentStatus?.totalPaid || 0),
+          receiptsTotal
+        );
+        const updatedTotalPaid = currentPaid + paymentAmount;
 
-      const receiptObj: PaymentReceipt = {
-        id: receiptId,
-        receiptNo: paymentData.receiptNo || ('SEC17-PAY-' + Math.floor(1000 + Math.random() * 9000)),
-        studentId: student?.id || ('s_' + studentRoll.trim().replace(/[^0-9a-zA-Z]/g, '')),
-        studentRoll,
-        studentName,
-        amount: paymentAmount,
-        monthsPaid: Array.isArray(paymentData.monthsPaid) ? paymentData.monthsPaid : (paymentData.monthsPaid ? [paymentData.monthsPaid] : []),
-        paymentDate: formattedPaymentDate,
-        paymentMethod: paymentData.paymentMethod || 'bKash',
-        transactionRef: paymentData.transactionRef || '',
-        collectorName: paymentData.collectorName || 'Batch Admin',
-        notes: paymentData.notes || '',
-        verified: true,
-      };
+        const formattedPaymentDate = formatPaymentDateTime(pData.paymentDate, receiptId);
 
-      // Optimistically add to local state with deduplication to ensure instant UI responsiveness
+        const receiptObj: PaymentReceipt = {
+          id: receiptId,
+          receiptNo: pData.receiptNo || ('SEC17-PAY-' + Math.floor(1000 + Math.random() * 9000)),
+          studentId: student?.id || ('s_' + studentRoll.trim().replace(/[^0-9a-zA-Z]/g, '')),
+          studentRoll,
+          studentName,
+          amount: paymentAmount,
+          monthsPaid: Array.isArray(pData.monthsPaid) ? pData.monthsPaid : (pData.monthsPaid ? [pData.monthsPaid] : []),
+          paymentDate: formattedPaymentDate,
+          paymentMethod: pData.paymentMethod || 'bKash',
+          transactionRef: pData.transactionRef || '',
+          collectorName: pData.collectorName || 'Batch Admin',
+          notes: pData.notes || '',
+          verified: true,
+        };
+
+        newReceiptObjs.push(receiptObj);
+
+        // STEP 1: Write directly to Firebase Firestore `receipts` collection
+        try {
+          await setDoc(doc(db, 'receipts', receiptId), receiptObj, { merge: true });
+        } catch (err: any) {
+          if (err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions')) {
+            handleFirestoreError(err, OperationType.WRITE, `receipts/${receiptId}`);
+          }
+          console.warn('Firestore setDoc receipts notice:', err);
+        }
+
+        // Update student record in Firestore `students` collection (totalPaid & status)
+        const studentDocId = student?.id || ('s_' + studentRoll.trim().replace(/[^0-9a-zA-Z]/g, ''));
+        try {
+          await setDoc(doc(db, 'students', studentDocId), {
+            id: studentDocId,
+            roll: studentRoll,
+            name: studentName,
+            phone: student?.phone || '',
+            status: newStatus,
+            joinedMonth: student?.joinedMonth || config?.startMonth || '2026-08',
+            totalPaid: updatedTotalPaid,
+          }, { merge: true });
+          // Clean up any duplicate doc if the roll number was previously saved as a bare docId
+          if (studentRoll && studentRoll !== studentDocId) {
+            try {
+              await deleteDoc(doc(db, 'students', studentRoll));
+            } catch (e) {}
+          }
+        } catch (studentErr: any) {
+          if (studentErr?.code === 'permission-denied' || studentErr?.message?.includes('Missing or insufficient permissions')) {
+            handleFirestoreError(studentErr, OperationType.WRITE, `students/${studentDocId}`);
+          }
+          console.warn('Firestore student totalPaid update notice:', studentErr);
+        }
+
+        // STEP 2: Server-side sync triggers Google Sheet Webhook for each receipt
+        const currentAdminEmail = adminEmail || localStorage.getItem('sec_admin_email') || '';
+        fetch(`/api/fund/payments?t=${Date.now()}`, {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: adminPinInput, adminEmail: currentAdminEmail, payment: receiptObj }),
+        }).catch((e) => console.warn('Backend payment sync notice:', e));
+      }
+
+      // Optimistically add to local state with deduplication
       setReceipts((prev) => {
-        const filtered = prev.filter((r) => r.id !== receiptObj.id && r.receiptNo !== receiptObj.receiptNo);
-        return [receiptObj, ...filtered];
+        const newIds = new Set(newReceiptObjs.map((r) => r.id));
+        const filtered = prev.filter((r) => !newIds.has(r.id));
+        return [...newReceiptObjs, ...filtered];
       });
 
-      // STEP 1: Write directly to Firebase Firestore `receipts` collection
-      try {
-        await setDoc(doc(db, 'receipts', receiptId), receiptObj, { merge: true });
-      } catch (err: any) {
-        if (err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions')) {
-          handleFirestoreError(err, OperationType.WRITE, `receipts/${receiptId}`);
-        }
-        console.warn('Firestore setDoc receipts notice:', err);
-      }
-
-      // Update student record in Firestore `students` collection (totalPaid & status)
-      const studentDocId = student?.id || ('s_' + studentRoll.trim().replace(/[^0-9a-zA-Z]/g, ''));
-      try {
-        await setDoc(doc(db, 'students', studentDocId), {
-          id: studentDocId,
-          roll: studentRoll,
-          name: studentName,
-          phone: student?.phone || '',
-          status: newStatus,
-          joinedMonth: student?.joinedMonth || config?.startMonth || '2026-08',
-          totalPaid: updatedTotalPaid,
-        }, { merge: true });
-        // Clean up any duplicate doc if the roll number was previously saved as a bare docId
-        if (studentRoll && studentRoll !== studentDocId) {
-          try {
-            await deleteDoc(doc(db, 'students', studentRoll));
-          } catch (e) {}
-        }
-      } catch (studentErr: any) {
-        if (studentErr?.code === 'permission-denied' || studentErr?.message?.includes('Missing or insufficient permissions')) {
-          handleFirestoreError(studentErr, OperationType.WRITE, `students/${studentDocId}`);
-        }
-        console.warn('Firestore student totalPaid update notice:', studentErr);
-      }
-
-      // Reset payment modal state and do not leave modal overlay stuck, matching Expense modal behavior
+      // Reset payment modal state
       setIsPaymentModalOpen(false);
       setPreselectedStudent(null);
       setIsReceiptModalOpen(false);
       setSelectedReceipt(null);
       setSelectedExpense(null);
-      setSyncToast({ message: `Payment receipt #${receiptObj.receiptNo} saved successfully!`, type: 'success' });
 
-      // STEP 2: Server-side sync triggers Google Sheet Webhook EXACTLY ONCE
-      const currentAdminEmail = adminEmail || localStorage.getItem('sec_admin_email') || '';
-      fetch(`/api/fund/payments?t=${Date.now()}`, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: adminPinInput, adminEmail: currentAdminEmail, payment: receiptObj }),
-      }).catch((e) => console.warn('Backend payment sync notice:', e));
+      const toastMsg = newReceiptObjs.length > 1
+        ? `Successfully generated ${newReceiptObjs.length} payment receipts!`
+        : `Payment receipt #${newReceiptObjs[0]?.receiptNo || ''} saved successfully!`;
+      setSyncToast({ message: toastMsg, type: 'success' });
     } catch (err: any) {
       console.error('handleAddPayment error:', err);
       setSyncToast({ message: 'Error adding payment: ' + (err?.message || 'Unknown error'), type: 'error' });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Printer, CheckCircle2, ShieldCheck, Download, ExternalLink, Calendar, Phone, CreditCard } from 'lucide-react';
+import { X, Printer, CheckCircle2, ShieldCheck, Download, ExternalLink, Calendar, Phone, CreditCard, Camera } from 'lucide-react';
 import { PaymentReceipt, Expense, BatchConfig } from '../../types';
 import { SecLogo } from '../SecLogo';
 import { formatPaymentDateTime } from '../../utils/dateFormatter';
@@ -43,6 +43,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             @media print {
               body { margin: 0; padding: 12px; background: white; color: black; }
               .print-container { border: none !important; box-shadow: none !important; padding: 0 !important; max-width: 100% !important; }
+              img { max-width: 100% !important; height: auto !important; object-fit: contain !important; }
             }
             body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; padding: 24px; display: flex; justify-content: center; }
             .print-container { background: white; padding: 32px; border-radius: 16px; border: 1px solid #e2e8f0; max-width: 600px; width: 100%; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
@@ -316,21 +317,30 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               </div>
 
               {expense.referenceDocUrl && (
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
-                  <span className="font-bold text-slate-700">Voucher Memo Attachment / Image Proof:</span>
-                  <img
-                    src={expense.referenceDocUrl}
-                    alt="Proof memo"
-                    className="w-full max-h-48 object-cover rounded-lg border border-slate-300"
-                  />
-                  <a
-                    href={expense.referenceDocUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-emerald-600 hover:underline flex items-center gap-1 font-medium"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" /> View Full Attachment Link
-                  </a>
+                <div className="p-3.5 sm:p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <Camera className="w-4 h-4 text-rose-600" />
+                      Official Memo / Expenditure Proof:
+                    </span>
+                    {!expense.referenceDocUrl.startsWith('data:') && (
+                      <a
+                        href={expense.referenceDocUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-emerald-600 hover:underline flex items-center gap-1 font-medium print:hidden"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> View Original Link
+                      </a>
+                    )}
+                  </div>
+                  <div className="bg-white p-2 sm:p-3 rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden flex items-center justify-center">
+                    <img
+                      src={expense.referenceDocUrl}
+                      alt="Expenditure Memo Proof"
+                      className="w-full max-h-96 sm:max-h-[30rem] object-contain rounded-lg"
+                    />
+                  </div>
                 </div>
               )}
 
