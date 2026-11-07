@@ -428,7 +428,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Received By (CR)
+                Received By 
               </label>
               <input
                 type="text"
