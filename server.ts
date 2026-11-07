@@ -709,6 +709,20 @@ async function startServer() {
         return res.json({ success: false, error: 'Please enter a valid Gmail address.' });
       }
 
+      // If verified directly via Google OAuth Popup / Firestore check, grant access and sync local cache
+      if (verifiedByGoogle === true) {
+        if (!allowed.includes(emailToVerify)) {
+          allowed.push(emailToVerify);
+          if (Array.isArray(db.config.allowedAdminEmails)) {
+            db.config.allowedAdminEmails.push(emailToVerify);
+          } else {
+            db.config.allowedAdminEmails = [emailToVerify];
+          }
+          saveDB(db);
+        }
+        return res.json({ success: true, email: emailToVerify, allowedAdminEmails: allowed, verifiedByGoogle: true });
+      }
+
       // Strict check against config's allowedAdminEmails
       const isAllowed = allowed.includes(emailToVerify);
       if (!isAllowed) {
@@ -716,11 +730,6 @@ async function startServer() {
           success: false,
           error: `Access Denied! '${emailToVerify}' is not the authorized admin email.`,
         });
-      }
-
-      // If verified directly via Google OAuth Popup, grant access
-      if (verifiedByGoogle === true) {
-        return res.json({ success: true, email: emailToVerify, allowedAdminEmails: allowed, verifiedByGoogle: true });
       }
 
       // Otherwise verify Admin Security PIN strictly against db.config.adminPin

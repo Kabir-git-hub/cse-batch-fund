@@ -21,7 +21,7 @@ import { SecLogo } from './components/SecLogo';
 import { calculateFundDetails } from './utils/fundCalculator';
 import { compareStudents } from './utils/studentSorter';
 import { formatPaymentDateTime } from './utils/dateFormatter';
-import { db, doc, collection, onSnapshot, getDoc, setDoc, updateDoc, deleteDoc, handleFirestoreError, OperationType } from './firebase';
+import { db, doc, collection, onSnapshot, getDoc, setDoc, updateDoc, deleteDoc, handleFirestoreError, OperationType, auth, signOut, onAuthStateChanged } from './firebase';
 
 const defaultEmptyConfig: BatchConfig = {
   batchName: 'CSE Batch-17',
@@ -257,12 +257,16 @@ export default function App() {
             const newConfig = snap.data() as BatchConfig;
             setConfig(newConfig);
 
-            const currentStoredEmail = localStorage.getItem('sec_admin_email') || '';
-            if (currentStoredEmail) {
+            const activeEmail = (auth.currentUser?.email || localStorage.getItem('sec_admin_email') || '').trim().toLowerCase();
+            if (activeEmail) {
               const allowedList = Array.isArray(newConfig?.allowedAdminEmails)
                 ? newConfig.allowedAdminEmails.map((e) => String(e || '').trim().toLowerCase())
                 : [];
-              if (!allowedList.includes(currentStoredEmail.trim().toLowerCase())) {
+              if (allowedList.includes(activeEmail)) {
+                setIsAdmin(true);
+                setAdminEmail(auth.currentUser?.email || activeEmail);
+                localStorage.setItem('sec_admin_email', auth.currentUser?.email || activeEmail);
+              } else {
                 setIsAdmin(false);
                 setAdminEmail('');
                 setAdminPinInput('');
@@ -277,6 +281,22 @@ export default function App() {
         }
       );
       unsubs.push(unsubConfig);
+
+      // Listen to Firebase Auth state changes
+      const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
+        const email = (currentUser?.email || localStorage.getItem('sec_admin_email') || '').trim().toLowerCase();
+        if (email && config?.allowedAdminEmails) {
+          const allowedList = Array.isArray(config.allowedAdminEmails)
+            ? config.allowedAdminEmails.map((e) => String(e || '').trim().toLowerCase())
+            : [];
+          if (allowedList.includes(email)) {
+            setIsAdmin(true);
+            setAdminEmail(currentUser?.email || email);
+            localStorage.setItem('sec_admin_email', currentUser?.email || email);
+          }
+        }
+      });
+      unsubs.push(unsubAuth);
 
       // 2. Real-time Students listener on `students` collection
       const unsubStudents = onSnapshot(
@@ -402,20 +422,14 @@ export default function App() {
 
       if (data) {
         if (data.config) {
-          setConfig(data.config);
-          // Instant Revocation check on API fetch too
-          const currentStoredEmail = localStorage.getItem('sec_admin_email') || '';
-          if (currentStoredEmail) {
-            const allowedList = Array.isArray(data.config?.allowedAdminEmails)
-              ? data.config.allowedAdminEmails.map((e: any) => String(e || '').trim().toLowerCase())
-              : [];
-            if (!allowedList.includes(currentStoredEmail.trim().toLowerCase())) {
-              setIsAdmin(false);
-              setAdminEmail('');
-              setAdminPinInput('');
-              localStorage.removeItem('sec_admin_email');
-            }
-          }
+          setConfig((prev) => ({
+            ...prev,
+            ...data.config,
+            // Preserve real-time Firestore allowedAdminEmails list if already populated
+            allowedAdminEmails: prev.allowedAdminEmails && prev.allowedAdminEmails.length > 0
+              ? prev.allowedAdminEmails
+              : data.config.allowedAdminEmails,
+          }));
         }
         if (Array.isArray(data.students) && data.students.length > 0) {
           setStudents((prev) => {
@@ -483,6 +497,19 @@ export default function App() {
       return true;
     }
     return false;
+  };
+
+  const handleLogoutAdmin = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.warn('Sign out error:', e);
+    }
+    setIsAdmin(false);
+    setAdminEmail('');
+    setAdminPinInput('');
+    localStorage.removeItem('sec_admin_email');
+    setSyncToast({ message: 'Admin logged out successfully.', type: 'info' as any });
   };
 
   // 1. Submit Payment Receipt: Firebase FIRST -> UI Instantly -> Google Sheet & Server Background
@@ -957,7 +984,7 @@ export default function App() {
         setActiveTab={setActiveTab}
         isAdmin={isAdmin}
         onOpenPinModal={() => setIsAdminPinModalOpen(true)}
-        onLogoutAdmin={() => setIsAdmin(false)}
+        onLogoutAdmin={handleLogoutAdmin}
         onOpenPaymentModal={() => {
           setPreselectedStudent(null);
           setIsPaymentModalOpen(true);
